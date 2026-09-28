@@ -11,7 +11,7 @@ requirements can be traced throughout the development and testing process.
 | FR-03 | Provide role-based access | All role-specific UCs | Role-Based Access Control | Test access using different roles |
 | FR-04 | Register a new customer | UC-10 | Register Customer | Verify customer record creation |
 | FR-05 | View customer details | UC-11, UC-22 | View Customer Details/Records | Search and verify displayed information |
-| FR-06 | Update customer information | UC-12 | Update Customer Information | Modify and verify customer data |
+| FR-06 | Update customer information | UC-06, UC-12 | Update Profile / Update Customer Information | Modify and verify customer data |
 | FR-07 | Create a bank account | UC-13 | Create Bank Account | Verify account creation |
 | FR-08 | Generate unique account number | UC-13 | Create Bank Account | Create multiple accounts and verify uniqueness |
 | FR-09 | View account details and balance | UC-03, UC-14, UC-23 | View Account Details/Records | Verify displayed account information |
@@ -44,15 +44,12 @@ requirements can be traced throughout the development and testing process.
 | NFR-04 | Input validation | Submit invalid input |
 | NFR-05 | Authentication | Attempt protected operation without login |
 | NFR-06 | Performance | Measure response time |
-| NFR-07 | Transaction processing performance | Measure transaction response |
 | NFR-08 | Account consistency | Compare balances before and after transactions |
 | NFR-09 | Transaction failure handling | Test failed transaction scenarios |
 | NFR-10 | Transaction record accuracy | Compare transactions with stored records |
 | NFR-11 | Usability | Evaluate navigation and interface |
 | NFR-12 | Error handling | Perform invalid operations |
-| NFR-13 | Ease of operation | Evaluate number of steps for common operations |
 | NFR-14 | Maintainability | Review modular project structure |
-| NFR-15 | Code quality | Review source code conventions and documentation |
 | NFR-16 | Unique identifiers | Verify customer/account/transaction IDs |
 | NFR-17 | Data consistency | Verify balances against transaction records |
 | NFR-18 | Data validation | Attempt to store invalid/incomplete data |
