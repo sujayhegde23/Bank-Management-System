@@ -131,8 +131,8 @@ authentication.
 transaction history should respond within 3 seconds under normal academic
 prototype usage.
 
-**NFR-07:** The system shall process transactions without unnecessary delays under
-the expected number of users.
+**NFR-07:** Financial transactions shall be processed within 5 seconds
+under normal academic prototype usage.
 
 ---
 
@@ -157,7 +157,8 @@ employees and administrators.
 **NFR-12:** The system shall display meaningful error messages when an invalid
 operation is performed.
 
-**NFR-13:** Banking operations shall require minimal steps for users to complete.
+**NFR-13:** After login, users shall be able to access permitted core
+banking operations within at most 3 navigation actions.
 
 ---
 
@@ -166,8 +167,8 @@ operation is performed.
 **NFR-14:** The system shall use a modular structure so that individual features can
 be modified without significantly affecting unrelated components.
 
-**NFR-15:** The source code shall follow consistent naming conventions and include
-appropriate documentation.
+**NFR-15:** Source code shall follow a consistent naming convention and
+business-logic modules shall contain appropriate documentation.
 
 ---
 
