@@ -38,18 +38,21 @@ requirements can be traced throughout the development and testing process.
 
 | Requirement ID | Requirement Area | Verification Method |
 |---|---|---|
-| NFR-01 | Password security | Inspect password storage |
-| NFR-02 | Role-based access | Attempt unauthorized operations |
-| NFR-03 | Data access security | Test unauthorized access |
-| NFR-04 | Input validation | Submit invalid input |
-| NFR-05 | Authentication | Attempt protected operation without login |
-| NFR-06 | Performance | Measure response time |
-| NFR-08 | Account consistency | Compare balances before and after transactions |
-| NFR-09 | Transaction failure handling | Test failed transaction scenarios |
-| NFR-10 | Transaction record accuracy | Compare transactions with stored records |
-| NFR-11 | Usability | Evaluate navigation and interface |
-| NFR-12 | Error handling | Perform invalid operations |
-| NFR-14 | Maintainability | Review modular project structure |
-| NFR-16 | Unique identifiers | Verify customer/account/transaction IDs |
-| NFR-17 | Data consistency | Verify balances against transaction records |
-| NFR-18 | Data validation | Attempt to store invalid/incomplete data |
+| NFR-01 | Password security | Inspect password storage and verify passwords are not stored in plain text |
+| NFR-02 | Role-based access | Attempt unauthorized operations using different user roles |
+| NFR-03 | Data access security | Attempt unauthorized access to customer, account and transaction information |
+| NFR-04 | Input validation | Submit invalid or malformed input and verify rejection |
+| NFR-05 | Authentication | Attempt protected banking operations without login |
+| NFR-06 | Performance | Measure response time of normal system operations |
+| NFR-07 | Transaction performance | Measure transaction processing time under normal prototype usage |
+| NFR-08 | Account consistency | Compare account balances before and after successful transactions |
+| NFR-09 | Transaction failure handling | Simulate transaction failure and verify that no partial balance update occurs |
+| NFR-10 | Transaction record accuracy | Compare completed transactions with stored transaction records |
+| NFR-11 | Usability | Verify that major features can be accessed through clear navigation |
+| NFR-12 | Error handling | Perform invalid operations and verify meaningful error messages |
+| NFR-13 | Navigation efficiency | Count the number of navigation actions required to access core banking operations |
+| NFR-14 | Maintainability | Review the project structure and verify separation into logical modules |
+| NFR-15 | Code quality and documentation | Review source code for consistent naming conventions and appropriate documentation |
+| NFR-16 | Unique identifiers | Verify that customer, account and transaction records have unique identifiers |
+| NFR-17 | Data consistency | Verify balances and transaction records remain consistent after banking operations |
+| NFR-18 | Data validation | Attempt to store invalid or incomplete data and verify rejection |
