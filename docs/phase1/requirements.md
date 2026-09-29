@@ -1,4 +1,13 @@
-# Software Requirements Specification
+# Requirements List
+
+> This file is the working list of functional and non-functional requirements.
+> The complete, IEEE-style **[Software Requirements Specification](SRS.md)**
+> consolidates these requirements with the introduction, overall description,
+> acceptance criteria, security objectives and use case model.
+>
+> Requirement IDs are unchanged. Requirements marked **(refined)** were reworded
+> in SRS version 1.0 to make them measurable and testable. Their intention is
+> unchanged.
 
 ## 1. Functional Requirements
 
@@ -109,7 +118,9 @@ perform and the quality constraints that the system must satisfy.
 
 ### Security Requirements
 
-**NFR-01:** User passwords shall not be stored in plain text.
+**NFR-01 (refined):** User passwords shall not be stored in plain text. They shall be
+stored only as salted one-way hashes produced by a password-hashing algorithm, and
+shall never be written to logs or returned in any response.
 
 **NFR-02:** The system shall restrict access to features based on the authenticated
 user's role.
@@ -117,22 +128,27 @@ user's role.
 **NFR-03:** The system shall prevent unauthorized users from accessing customer,
 account and transaction information.
 
-**NFR-04:** The system shall validate user input before processing banking
-operations.
+**NFR-04 (refined):** The system shall validate user input before processing banking
+operations. It shall check required fields, data type, format, length and permitted
+range (for example, amounts must be greater than zero with at most two decimal
+places), and shall reject invalid input without modifying stored data.
 
-**NFR-05:** Sensitive banking operations shall only be performed after successful
-authentication.
+**NFR-05 (refined):** Sensitive banking operations shall only be performed after
+successful authentication. Requests to protected operations without a valid
+authenticated session shall be rejected.
 
 ---
 
 ### Performance Requirements
 
-**NFR-06:** Normal system operations such as login, balance enquiry and viewing
-transaction history should respond within 3 seconds under normal academic
-prototype usage.
+**NFR-06 (refined):** Normal system operations such as login, balance enquiry and
+viewing transaction history shall respond within 3 seconds for at least 95% of
+requests under normal prototype usage (up to 10 concurrent users in the local test
+environment; SRS assumption A-02).
 
-**NFR-07:** Financial transactions shall be processed within 5 seconds
-under normal academic prototype usage.
+**NFR-07 (refined):** Financial transactions shall be processed within 5 seconds for
+at least 95% of requests under normal prototype usage (up to 10 concurrent users in the
+local test environment; SRS assumption A-02).
 
 ---
 
@@ -144,18 +160,23 @@ successful financial transaction.
 **NFR-09:** If a transaction fails before completion, the system shall not leave
 account balances in a partially updated state.
 
-**NFR-10:** The system shall maintain transaction records accurately for future
-reference.
+**NFR-10 (refined):** The system shall store exactly one transaction record for every
+completed financial transaction, containing the transaction ID, type, amount,
+account number(s), date and time. Stored transaction records shall not be editable
+or deletable through the application.
 
 ---
 
 ### Usability Requirements
 
-**NFR-11:** The user interface shall provide clear navigation for customers,
-employees and administrators.
+**NFR-11 (refined):** After login, the user interface shall display a navigation menu
+that contains only the operations permitted for the logged-in user's role, and this
+menu shall be available on every page.
 
-**NFR-12:** The system shall display meaningful error messages when an invalid
-operation is performed.
+**NFR-12 (refined):** When an operation is rejected, the system shall display a message
+that states the reason (for example, insufficient balance, frozen account or invalid
+input field). It shall not display stack traces, database errors or other internal
+system details.
 
 **NFR-13:** After login, users shall be able to access permitted core
 banking operations within at most 3 navigation actions.
@@ -164,11 +185,14 @@ banking operations within at most 3 navigation actions.
 
 ### Maintainability Requirements
 
-**NFR-14:** The system shall use a modular structure so that individual features can
-be modified without significantly affecting unrelated components.
+**NFR-14 (refined):** The system shall be divided into separate modules for
+authentication, customer management, account management, transaction management,
+employee administration and reporting. A change to one module shall not require
+changes to the internal code of unrelated modules.
 
-**NFR-15:** Source code shall follow a consistent naming convention and
-business-logic modules shall contain appropriate documentation.
+**NFR-15 (refined):** Source code shall follow a single naming convention documented
+by the team, and every business-logic module and public function shall include a
+comment describing its purpose, inputs and outputs.
 
 ---
 
@@ -227,18 +251,23 @@ during the testing phase of the project.
 
 | Requirement ID | Validation / Test Method | Expected Result |
 |---|---|---|
-| NFR-01 | Inspect stored user credentials | Passwords are not stored as plain text |
+| NFR-01 | Inspect stored user credentials and logs; create two users with the same password | Only salted hashes are stored, the two hashes differ, and no plain-text password appears in logs |
 | NFR-02 | Access features using different user roles | Unauthorized features cannot be accessed |
 | NFR-03 | Attempt unauthorized access to banking information | Access is denied |
 | NFR-04 | Submit invalid or malformed input | Invalid input is rejected |
 | NFR-05 | Attempt protected banking operation without authentication | Operation is denied |
-| NFR-06 | Measure response time of normal operations | Operations complete within approximately 3 seconds under normal load |
+| NFR-06 | Time 20 repetitions each of login, balance enquiry and transaction history with up to 10 concurrent users | At most 1 of 20 responses per operation exceeds 3 seconds |
+| NFR-07 | Time 20 deposits and 20 transfers under the same conditions | At most 1 of 20 exceeds 5 seconds |
 | NFR-08 | Perform multiple valid transactions | Account balances remain correct |
 | NFR-09 | Force a transaction failure during processing | No partial balance update occurs |
-| NFR-10 | Compare completed transactions with stored transaction records | Records accurately represent completed transactions |
-| NFR-11 | Navigate through the interface | Major features can be accessed clearly |
-| NFR-12 | Perform an invalid operation | A meaningful error message is displayed |
-| NFR-14 | Review project source structure | Features are separated into logical modules |
+| NFR-10 | Compare completed transactions with stored transaction records | Exactly one accurate record exists per completed transaction, and records cannot be edited or deleted |
+| NFR-11 | Log in as each role and compare the menu with the role's use cases | The menu shows only the role's permitted operations, on every page |
+| NFR-12 | Perform an invalid operation | A message stating the reason is displayed, with no stack trace or internal details |
+| NFR-13 | Count navigation actions from the dashboard to each core operation | Each core operation is reached in 3 or fewer navigation actions |
+| NFR-14 | Review project source structure | The six modules exist and interact only through defined interfaces |
+| NFR-15 | Review source code | Naming convention is followed and public business-logic functions are documented |
 | NFR-16 | Inspect customer, account and transaction identifiers | Each record has a unique identifier |
 | NFR-17 | Compare balances before and after transactions | Balances and transaction records remain consistent |
 | NFR-18 | Submit incomplete or invalid records | Invalid data is not stored |
+
+Test cases that verify each requirement are listed in the [Test Plan](test_plan.md#9-test-traceability-matrix).

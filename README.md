@@ -57,6 +57,16 @@ Bank-Management-System/
 ├── README.md
 ├── docs/
 │   └── phase1/
+│       ├── SRS.md                      # Complete IEEE-style SRS
+│       ├── test_plan.md                # IEEE-style test plan with test cases
+│       ├── architecture_design.md      # Architecture and design specification
+│       ├── diagrams/
+│       │   ├── README.md               # Diagram index
+│       │   ├── component_diagram.md    # Mermaid source (+ .png)
+│       │   ├── login_sequence.md       # Mermaid source (+ .png)
+│       │   ├── fund_transfer_sequence.md
+│       │   ├── data_model.md           # ER and account-status diagrams
+│       │   └── use_case_diagram.py     # Generates ../use_case_diagram.png
 │       ├── actors_usecases.md
 │       ├── feasibility_study.md
 │       ├── problem_statement.md
@@ -67,20 +77,38 @@ Bank-Management-System/
 ```
 
 ## Documentation Index
+
+### Phase 1 Deliverables
+- [Software Requirements Specification (SRS)](docs/phase1/SRS.md): complete IEEE-style SRS with functional and non-functional requirements, security objectives and requirements, and the use case model
+- [Software Test Plan](docs/phase1/test_plan.md): IEEE-style test plan, security validation (Section 5.1), 21 test cases and a test traceability matrix
+- [Software Architecture and Design Specification](docs/phase1/architecture_design.md): layered architecture, components, security architecture, sequence diagrams, API design and error handling
+- [Requirement Traceability Matrix](docs/phase1/rtm.md): requirement → use case → architecture component → test case
+
+### Supporting Documents
 - [Problem Statement](docs/phase1/problem_statement.md)
-- [Requirements Specification](docs/phase1/requirements.md)
+- [Requirements List](docs/phase1/requirements.md)
 - [Actors and Use Cases](docs/phase1/actors_usecases.md)
 - [Feasibility Study](docs/phase1/feasibility_study.md)
-- [Requirement Traceability Matrix](docs/phase1/rtm.md)
+
+### Diagrams
+- [Diagram index](docs/phase1/diagrams/README.md)
+- [Use Case Diagram](docs/phase1/use_case_diagram.png)
+- [Component Diagram](docs/phase1/diagrams/component_diagram.md)
+- [Login Sequence Diagram](docs/phase1/diagrams/login_sequence.md)
+- [Fund Transfer Sequence Diagram](docs/phase1/diagrams/fund_transfer_sequence.md)
+- [Data Model and Account Status Diagrams](docs/phase1/diagrams/data_model.md)
 
 ## Project Status
-This project is currently in the requirements and analysis phase. The foundational documentation has been prepared and covers:
-- problem definition
-- system objectives
-- functional and non-functional requirements
-- user roles and use cases
-- traceability matrix
-- feasibility analysis
+Phase 1 (requirements, test planning, and architecture and design) documentation has been prepared. It covers:
+- problem definition, objectives and feasibility analysis
+- a complete Software Requirements Specification: 25 functional and 18 non-functional requirements with measurable acceptance criteria
+- security objectives (SO-01 to SO-04) mapped to security requirements
+- actors, use cases and the use case diagram
+- a test plan with security validation and 21 test cases traced to the requirements
+- a layered architecture with a component diagram, security architecture, sequence diagrams, planned REST-style APIs and error handling
+- an extended requirement traceability matrix
+
+The application itself has **not** been implemented yet. The architecture and APIs are planned designs, and all test cases are in the *Not Executed* state.
 
 ## Expected Future Phases
 1. System design and database schema
