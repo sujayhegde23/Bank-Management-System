@@ -88,6 +88,12 @@ This project is currently in the requirements and analysis phase. The foundation
 3. Testing and validation
 4. Final deployment or demo preparation
 
+## How to Contribute
+1. Clone the repository and create a new branch for your work.
+2. Keep documentation for each phase inside its own folder under `docs/`.
+3. Write clear commit messages describing what was changed.
+4. Open a pull request so the team can review changes before merging into `main`.
+
 ## Notes
 This is a prototype for academic use and does not include real-bank integrations such as UPI, loan processing, payment gateways, or inter-bank settlement.
 
