@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required documentation
+        run: |
+          test -f README.md
+          test -f docs/phase1/SRS.md
+          test -f docs/phase1/requirements.md
+          test -f docs/phase1/rtm.md
+          test -f docs/phase1/test_plan.md
+          test -f docs/phase1/architecture_design.md
+          echo "Required documentation files exist."
