@@ -7,13 +7,14 @@
 | Document | Software Test Plan |
 | Project | Bank Management System (academic prototype) |
 | Phase | Phase 1: Test Planning |
-| Version | 1.0 |
-| Date | 29 September 2026 |
+| Version | 1.1 |
+| Date | 21 October 2026 |
 | Standard followed | IEEE Std 829-2008 structure, aligned with ISO/IEC/IEEE 29119-3 |
 | Related documents | [SRS](SRS.md), [Architecture and Design Specification](architecture_design.md), [RTM](rtm.md) |
 
 > The system has not been implemented yet. This plan defines **how** it will be
-> tested. All test cases are in the **Not Executed** state, and actual results
+> tested across the React/Vite frontend, Node.js/Express backend API, and MySQL
+> database. All test cases are in the **Not Executed** state, and actual results
 > will be recorded during the testing phase.
 
 ---
@@ -94,20 +95,19 @@ gateways, loans, inter-bank settlement) are not included.
 The test items are the planned modules of the system, as defined in the
 [Architecture and Design Specification](architecture_design.md#4-component-architecture).
 
-| Test Item | Architecture Component | Requirements |
+| Test Item | Architecture Component & Technology | Requirements |
 |---|---|---|
-| Authentication | Authentication & Authorization Service | FR-01, FR-02, FR-03, FR-22, NFR-01, NFR-02, NFR-05 |
-| Customer Management | Customer Service | FR-04, FR-05, FR-06 |
-| Account Management | Account Service | FR-07, FR-08, FR-09, FR-10, FR-11 |
-| Deposit | Transaction Service | FR-11, FR-12, FR-18, FR-19 |
-| Withdrawal | Transaction Service | FR-11, FR-13, FR-14, FR-18, FR-19 |
-| Fund Transfer | Transaction Service | FR-11, FR-15, FR-16, FR-17, FR-18, FR-19 |
-| Transaction History | Transaction Service | FR-20, FR-21 |
-| Employee Management | Employee Administration Service | FR-23, FR-24 |
-| Reporting | Reporting Service | FR-25 |
-| Input Validation | Input Validation | NFR-04, NFR-18 |
-| User Interface | Web User Interface | NFR-11, NFR-12, NFR-13 |
-| Data Storage | Data Access Layer, Relational Database | NFR-08, NFR-09, NFR-10, NFR-16, NFR-17 |
+| User Interface | Web User Interface (React SPA built with Vite) | NFR-11, NFR-12, NFR-13 |
+| Authentication & Session | Authentication & Authorization Service (Express middleware & service) | FR-01, FR-02, FR-03, FR-22, NFR-01, NFR-02, NFR-05 |
+| Customer Management | Customer Service (Node.js service layer) | FR-04, FR-05, FR-06 |
+| Account Management | Account Service (Node.js service layer) | FR-07, FR-08, FR-09, FR-10, FR-11 |
+| Deposit & Withdrawal | Transaction Service (Node.js service layer) | FR-11, FR-12, FR-13, FR-14, FR-18, FR-19 |
+| Fund Transfer | Transaction Service (Node.js service layer) | FR-11, FR-15, FR-16, FR-17, FR-18, FR-19 |
+| Transaction History & Records | Transaction Service (Node.js service layer) | FR-20, FR-21 |
+| Employee Administration | Employee Administration Service (Node.js service layer) | FR-23, FR-24 |
+| Administrative Reporting | Reporting Service (Node.js service layer) | FR-25 |
+| Input Validation | Input Validation (Express request middleware) | NFR-04, NFR-18 |
+| Data Access & Storage | Data Access Layer (Node.js) & MySQL Relational Database | NFR-08, NFR-09, NFR-10, NFR-16, NFR-17 |
 
 ---
 
@@ -149,7 +149,7 @@ The test items are the planned modules of the system, as defined in the
 | Transaction record accuracy | NFR-10 | TC-05, TC-07, TC-15 |
 | Role-specific navigation | NFR-11, NFR-13 | TC-21 |
 | Meaningful error messages | NFR-12 | TC-02, TC-06, TC-12 |
-| Modular structure and code documentation | NFR-14, NFR-15 | Code review REV-01, REV-02 (Section 4.8) |
+| Modular structure and code documentation | NFR-14, NFR-15 | Code review REV-01, REV-02 (Section 4.12) |
 | Unique identifiers | NFR-16 | TC-04, TC-14 |
 
 ### 3.3 Features Not to be Tested
@@ -165,70 +165,87 @@ The test items are the planned modules of the system, as defined in the
 
 ## 4. Test Approach
 
-Testing is mainly manual, black-box testing through the user interface. Some
-tests also call the planned API directly using an API client, or inspect the
-database with a database client. This is realistic for an academic prototype
-built by a small team.
+Testing follows a layered verification strategy across the three architectural tiers:
+the **React frontend**, the **Node.js/Express backend API**, and the **MySQL database**.
 
-### 4.1 Functional Testing
+> **Note on Execution Status:** The application has not yet been implemented. All test
+> cases and procedures in this document represent a **planned test specification**. No
+> test cases have been executed or passed yet, and all tests remain in the **Not Executed**
+> state until implementation begins.
 
-Each functional requirement is tested against its acceptance criterion in the
-[SRS](SRS.md#3-functional-requirements). Test cases use **equivalence
-partitioning** (valid versus invalid inputs) and **boundary value analysis**
-(for example, withdrawing exactly the available balance, or transferring 0.01).
+### 4.1 Frontend Testing (React with Vite)
 
-### 4.2 Integration Testing
+Frontend testing verifies the user interface components and client-side behavior:
 
-Integration tests verify that components work together across layers:
+1. **Component Rendering & State Management:** Verify that React components render the expected forms, controls, tables, and dashboards for each user role without errors.
+2. **Client-Side Input Validation:** Verify that basic client-side form validation (e.g. required fields, valid email syntax, positive numeric amounts) triggers clear user guidance before form submission.
+3. **Role-Specific Views and Navigation:** Verify that the navigation menu renders strictly role-permitted actions (NFR-11) and that all permitted core features are accessible within at most 3 navigation steps (NFR-13).
+4. **API Integration & Error Display:** Verify that asynchronous HTTP requests correctly handle response payloads, loading states, and error responses, displaying safe user-friendly messages without exposing system internals (NFR-12).
 
-- Web User Interface → Authentication & Authorization Service (login, session
-  checks)
-- Transaction Service → Account Service → Data Access Layer → Relational
-  Database (transfers update two accounts and one transaction record together)
-- Employee Administration Service → Authentication & Authorization Service
-  (a deactivated employee can no longer log in)
+### 4.2 Backend & REST API Testing (Node.js with Express)
 
-Each module is first tested on its own. Modules are then combined in this
-order: authentication, customer, account, transaction, employee administration,
-reporting.
+Backend testing verifies the Express application layer independently of the UI:
 
-### 4.3 Validation Testing
+1. **Endpoint Routing & Payloads:** Call planned REST endpoints directly using an API client (such as Postman or curl) or automated HTTP test utilities (e.g., Supertest), verifying HTTP status codes and structured JSON response schemas (Section 9 of [Architecture Specification](architecture_design.md#9-api-design)).
+2. **Authentication & Session Lifecycle:** Test login (`POST /api/auth/login`), password validation against salted hashes, session creation, session invalidation on logout (`POST /api/auth/logout`), session expiry after inactivity, and rejection of protected calls without a valid session (`AUTH_003`).
+3. **Role-Based Authorization (RBAC):** Verify that Express authorization middleware intercepts and denies unauthorized role requests with `AUTH_002` across every protected route.
+4. **Error Handling Middleware:** Verify that the central Express error-handling middleware intercepts thrown exceptions and returns standardized error codes without stack traces or SQL syntax (NFR-12).
 
-Validation testing confirms that the complete system meets user needs. Each
-actor's main use cases from [Actors and Use Cases](actors_usecases.md) are run
-end to end. For example, an employee registers a customer, creates an account
-and deposits money, and then the customer logs in, transfers funds and views
-the history.
+### 4.3 Database Interaction & Persistence Testing (MySQL)
 
-### 4.4 Negative Testing
+Database testing verifies direct interactions between the Node.js Data Access Layer and the MySQL database:
 
-Every major operation is also tested with invalid or unauthorized actions:
-wrong passwords, missing fields, negative and zero amounts, amounts above the
-balance, frozen and inactive accounts, non-existent accounts, and access by the
-wrong role. The expected result is always a clear rejection (NFR-12) with **no
-change to stored data**.
+1. **Parameterized Queries:** Verify through code inspection and dynamic testing that all database operations use parameterized queries, ensuring that user input is treated strictly as data parameters to help prevent SQL injection when used correctly (NFR-04, SV-06).
+2. **Schema & Constraint Validation:** Verify that MySQL primary keys, foreign keys, unique constraints (account numbers, usernames, transaction references), NOT NULL constraints, and `CHECK (balance >= 0)` prevent corrupt or duplicate records from being stored (NFR-16, NFR-18, REV-03).
+3. **Connection Management:** Verify connection pool initialization, error recovery, and proper release of client connections back to the pool after query execution.
 
-### 4.5 Security Testing
+### 4.4 Authorization & Input Validation Testing
 
-Security testing follows the checklist in
-[Section 5.1](#51-security-validation). It covers authentication, authorization,
-password storage, input validation, session handling, account status
-restrictions and data confidentiality.
+Validation and authorization testing ensures that security controls cannot be bypassed:
 
-### 4.6 Performance Testing
+1. **Server-Side Input Validation:** Submit empty strings, boundary values, malformed data types, overlong strings, and SQL injection strings (`' OR '1'='1`) to verify rejection with `VAL_001` before reaching business services (NFR-04, NFR-18).
+2. **Customer Data Ownership:** Verify horizontal privilege separation (SV-09, TC-16): when Customer C1 requests data or transactions belonging to Customer C2, the backend rejects the request with `AUTH_002` and returns no data.
+3. **Privilege Escalation Prevention:** Verify vertical separation: ensure Customer and Employee users cannot access administrative endpoints (`POST /api/employees`, `GET /api/reports/summary`).
 
-Response times are measured with the browser developer tools (Network tab) or
-an API client while up to 10 users are active on the test environment (SRS
-A-02). Each measured operation is repeated 20 times, and the requirement is met
-if at most 1 of the 20 repetitions exceeds the limit (NFR-06, NFR-07).
+### 4.5 Financial Transaction Integrity & Concurrency Testing
 
-### 4.7 Regression Testing
+Financial operations require strict ACID guarantees:
 
-After each defect fix, the failed test case is repeated. The related high-priority
-test cases (TC-01, TC-03, TC-05, TC-07 and TC-10) are also repeated to confirm
-that nothing else was broken.
+1. **Atomicity & Consistency:** Test deposits (TC-05), withdrawals (TC-06, TC-15), and fund transfers (TC-07) to verify that balance updates and transaction records (`BANK_TRANSACTION`) are committed together inside a single database transaction. If any failure occurs, the transaction rolls back completely and no balance is altered (NFR-08, NFR-09, NFR-17).
+2. **Concurrency & Row-Level Locking:** Test concurrent operations on the same account to verify that `SELECT ... FOR UPDATE` locks account rows. Verify that fund transfers lock accounts in ascending ID order to prevent deadlocks.
+3. **Duplicate Processing Prevention:** Verify that re-submitting a transfer or deposit request does not result in duplicate debits or duplicate transaction records.
+4. **Account Status Enforcement:** Verify that accounts in FROZEN or INACTIVE status reject all deposits, withdrawals, and transfers with `ACC_001` before any balance change is executed (FR-11, TC-08, SV-08).
 
-### 4.8 Reviews and Inspections
+### 4.6 Integration Testing
+
+Integration tests verify that components work together across tiers:
+- **React UI → Express Backend:** HTTP requests carry appropriate headers/session credentials, and API responses update the React component tree correctly.
+- **Express Backend → Data Access Layer → MySQL:** Service operations properly translate into parameterized SQL queries and database transactions.
+- **Cross-Service Dependencies:** Transaction Service coordinates with Account Service for ownership and status checks before invoking the Data Access Layer.
+
+Modules are verified independently first, then integrated in sequence: Authentication, Customer, Account, Transaction, Employee Administration, and Reporting.
+
+### 4.7 Validation Testing (End-to-End)
+
+Validation testing confirms that the complete system meets user needs across all three roles. Each actor's main use cases from [Actors and Use Cases](actors_usecases.md) are run end to end through the React UI and Express backend. For example, an employee registers a customer, creates an account and deposits money, and then the customer logs in, transfers funds and views the history.
+
+### 4.8 Negative Testing
+
+Every major operation is also tested with invalid or unauthorized actions: wrong passwords, missing fields, negative and zero amounts, amounts above the balance, frozen and inactive accounts, non-existent accounts, and access by the wrong role. The expected result is always a clear rejection (NFR-12) with **no change to stored data**.
+
+### 4.9 Security Testing
+
+Security testing follows the checklist in [Section 5.1](#51-security-validation). It covers authentication, authorization, password storage, input validation, session handling, account status restrictions, and data confidentiality.
+
+### 4.10 Performance Testing
+
+Response times are measured with the browser developer tools (Network tab) or an API benchmark client while up to 10 users are active on the test environment (SRS A-02). Each measured operation is repeated 20 times, and the requirement is met if at most 1 of the 20 repetitions exceeds the limit (NFR-06, NFR-07).
+
+### 4.11 Regression Testing
+
+After each defect fix, the failed test case is repeated. The related high-priority test cases (TC-01, TC-03, TC-05, TC-07 and TC-10) are also repeated to confirm that nothing else was broken.
+
+### 4.12 Reviews and Inspections
 
 Some requirements are verified by review instead of execution:
 
@@ -246,11 +263,11 @@ Some requirements are verified by review instead of execution:
 
 | Item | Environment |
 |---|---|
-| Browser / client | Latest Google Chrome, plus one of Mozilla Firefox or Microsoft Edge, on a desktop or laptop |
-| Application server / backend | The backend application/server layer of the prototype, running locally. The backend framework has not yet been selected ([SRS](SRS.md#25-design-and-implementation-constraints), C-08). |
-| Database | MySQL Community Edition or an equivalent relational database, on the same machine or local network |
+| Browser / client | Latest Google Chrome, plus one of Mozilla Firefox or Microsoft Edge, running the React single-page application built with Vite |
+| Application server / backend | Node.js runtime executing the Express backend application server listening on local HTTP port ([SRS](SRS.md#25-design-and-implementation-constraints), C-08) |
+| Database | MySQL Community Edition (InnoDB storage engine supporting ACID transactions), running locally on default port 3306 |
 | Local development environment | Team laptops or lab machines (Windows, macOS or Linux), Visual Studio Code, Git and GitHub |
-| Supporting tools | Browser developer tools (response times, requests), an API client such as Postman or curl (direct API calls), a database client such as MySQL Workbench (data inspection) |
+| Supporting tools | Browser developer tools (Network tab, console), API client such as Postman or curl (direct REST API calls), database client such as MySQL Workbench (schema and data inspection), and planned test runners (e.g., Vitest/Jest, Supertest) to be introduced during implementation |
 
 **Test data**
 
@@ -753,7 +770,7 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | TC-21 | Role-Specific Navigation | Usability | Medium |
 
 **Totals:** 21 test cases covering both functional and non-functional
-requirements, plus 3 reviews (Section 4.8).
+requirements, plus 3 reviews (Section 4.12).
 
 ---
 
