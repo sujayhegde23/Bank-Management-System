@@ -18,6 +18,7 @@
 |---|---|---|
 | 0.1 | Phase 1 | Initial problem statement, requirements, use cases, RTM and feasibility study |
 | 1.0 | 29 Sep 2026 | Consolidated IEEE-style SRS; vague requirements refined to be measurable; security section added; use case diagram redrawn so Login and Logout are associated with all three actors |
+| 1.1 | 21 Oct 2026 | Finalize technology stack: React with Vite (frontend), Node.js with Express (backend), MySQL (database), and REST API over HTTP; update environment and constraints (C-01, C-08) |
 
 ---
 
@@ -195,24 +196,24 @@ The full list of actors and use cases is in
 
 | Item | Environment |
 |---|---|
-| Client | A current desktop web browser (Google Chrome, Mozilla Firefox or Microsoft Edge) |
-| Server | A backend application/server layer running on a developer laptop or lab machine (Windows, macOS or Linux) |
-| Database | MySQL Community Edition or an equivalent relational database |
-| Network | Local machine or local network for development and demonstration |
+| Client | A current desktop web browser (Google Chrome, Mozilla Firefox or Microsoft Edge) running a React single-page application built with Vite |
+| Server | Node.js runtime executing an Express backend application/server layer on a developer laptop or lab machine (Windows, macOS or Linux) |
+| Database | MySQL Community Edition or an equivalent relational database (InnoDB engine supporting ACID transactions) |
+| Network | Local machine or local network for development and demonstration; REST API communication over HTTP/JSON |
 | Tools | Visual Studio Code, Git and GitHub |
 
 ### 2.5 Design and Implementation Constraints
 
 | ID | Constraint |
 |---|---|
-| C-01 | The frontend shall use HTML, CSS and JavaScript ([Feasibility Study](feasibility_study.md#1-technical-feasibility)). |
-| C-02 | Data shall be stored in a relational database (MySQL or equivalent) that supports ACID transactions. |
+| C-01 | The frontend shall use HTML, CSS and JavaScript, implemented as a modern React single-page application using Vite ([Feasibility Study](feasibility_study.md#1-technical-feasibility)). |
+| C-02 | Data shall be stored in a relational database (MySQL with InnoDB storage engine or equivalent) that supports ACID transactions and row-level locking. |
 | C-03 | Only free or open-source tools and libraries shall be used ([Feasibility Study](feasibility_study.md#3-economic-feasibility)). |
 | C-04 | Git and GitHub shall be used for version control and collaboration. |
 | C-05 | Only dummy or test data shall be stored; no real customer information shall be used ([Feasibility Study](feasibility_study.md#6-legal-and-ethical-feasibility)). |
 | C-06 | The system shall not integrate with any external banking network or payment service. |
 | C-07 | The project shall be completed within the semester schedule, so scope is limited to the functions in Section 2.2. |
-| C-08 | The backend framework and session technology have not yet been selected. Requirements and design in this phase are therefore technology-neutral. |
+| C-08 | The backend shall be developed using Node.js with the Express framework providing a RESTful API over HTTP to the React frontend. Concrete authentication libraries, session-storage mechanisms, and package versions remain implementation-phase decisions. |
 
 ### 2.6 Assumptions and Dependencies
 
@@ -234,8 +235,8 @@ The full list of actors and use cases is in
 | Interface | Description |
 |---|---|
 | User interface | Browser-based pages with a role-specific navigation menu, forms with field-level validation messages, and confirmation screens for financial transactions. |
-| Software interface | The backend communicates with the relational database through a data access layer using parameterized queries and database transactions. |
-| Communication interface | The browser communicates with the backend over HTTP using request/response messages (planned REST-style API; see [API Design](architecture_design.md#9-api-design)). HTTPS should be used if the prototype is deployed beyond a local machine. |
+| Software interface | The Node.js and Express backend communicates with the MySQL relational database through a data access layer using parameterized queries and database transactions. |
+| Communication interface | The React browser client communicates with the Express backend over HTTP using JSON REST API request/response messages (see [API Design](architecture_design.md#9-api-design)). HTTPS should be used if the prototype is deployed beyond a local machine. |
 | Hardware interface | No special hardware is required. |
 
 ---

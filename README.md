@@ -44,12 +44,25 @@ This repository currently contains the project planning and requirements documen
 - Administrative reporting
 
 ## Technology Stack
-The feasibility study identifies a practical academic stack based on commonly available tools:
-- Frontend: HTML, CSS, JavaScript
-- Backend: server-side framework or application logic layer
-- Database: MySQL or equivalent relational database
-- Version control: Git and GitHub
-- IDE: Visual Studio Code
+The technology stack has been finalized for the Bank Management System:
+
+- **Frontend:** React with Vite (Single Page Application architecture, component-based user interface)
+- **Backend:** Node.js with Express (RESTful API, modular service layer, middleware-based authorization)
+- **Database:** MySQL (Relational database with InnoDB engine, ACID transactions, and decimal precision for currency)
+- **Communication:** REST API over HTTP with JSON payloads
+- **Development & Collaboration:** Visual Studio Code, Git and GitHub
+
+### Core Security and Reliability Principles
+- **Parameterized queries:** All database operations use parameterized queries, which help prevent SQL injection when used correctly by ensuring user input is treated strictly as data rather than executable SQL code.
+- **Environment variables:** Sensitive credentials (database passwords, session secrets) are kept in environment variables and never committed to version control.
+- **Server-side validation:** All inputs are strictly validated on the server before business rules or database operations execute.
+- **Role-based authorization:** Backend middleware enforces role-based access control (RBAC) and customer data ownership on every protected endpoint.
+- **Session management:** Secure authentication with server-validated, revocable sessions.
+- **Transaction consistency:** Financial operations (deposits, withdrawals, fund transfers) are wrapped in atomic database transactions with row-level locks to preserve balance consistency and prevent duplicate processing.
+- **Safe error handling:** Standardized, structured error messages that prevent leaking stack traces, database schemas, or sensitive details.
+
+*Note on implementation decisions:* Specific package versions, authentication/session token libraries, concrete database drivers/ORMs, and production deployment hosting remain open implementation details to be decided in subsequent phases.
+
 
 ## Project Structure
 ```text
@@ -105,7 +118,7 @@ Phase 1 (requirements, test planning, and architecture and design) documentation
 - security objectives (SO-01 to SO-04) mapped to security requirements
 - actors, use cases and the use case diagram
 - a test plan with security validation and 21 test cases traced to the requirements
-- a layered architecture with a component diagram, security architecture, sequence diagrams, planned REST-style APIs and error handling
+- a layered architecture with a component diagram, security architecture, sequence diagrams, planned REST-style APIs, error handling, and finalized technology stack (React with Vite, Node.js with Express, MySQL)
 - an extended requirement traceability matrix
 
 The application itself has **not** been implemented yet. The architecture and APIs are planned designs, and all test cases are in the *Not Executed* state.
@@ -126,4 +139,4 @@ The application itself has **not** been implemented yet. The architecture and AP
 This is a prototype for academic use and does not include real-bank integrations such as UPI, loan processing, payment gateways, or inter-bank settlement.
 
 ## Repository Purpose
-The repository serves as the planning and documentation foundation for a complete Bank Management System that can later be implemented as a web application or desktop-based academic project.
+The repository serves as the planning and documentation foundation for a complete Bank Management System to be implemented as a web application using React with Vite, Node.js with Express, and MySQL.

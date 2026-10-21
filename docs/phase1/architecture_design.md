@@ -7,16 +7,19 @@
 | Document | Software Architecture and Design Specification |
 | Project | Bank Management System (academic prototype) |
 | Phase | Phase 1: Architecture and Preliminary Design |
-| Version | 1.0 |
-| Date | 29 September 2026 |
+| Version | 1.1 |
+| Date | 21 October 2026 |
 | Standard followed | IEEE Std 1016-2009 (Software Design Descriptions), ISO/IEC/IEEE 42010 concepts |
 | Related documents | [SRS](SRS.md), [Test Plan](test_plan.md), [RTM](rtm.md) |
 
 > **Status of this design:** The system has not been implemented yet. All
 > components, services and APIs in this document are a **planned design**. The
-> backend framework and session technology have not been selected (SRS C-08),
-> so the design is technology-neutral wherever the repository has not made a
-> decision.
+> technology stack is finalized as **React with Vite** for the frontend, **Node.js
+> with Express** for the backend, **MySQL** for the relational database, and
+> **REST API over HTTP** for client-server communication (SRS C-01, C-08).
+> Implementation-level choices (such as specific npm package versions, concrete
+> authentication/session token libraries, and deployment hosting) remain open
+> decisions to be finalized in the implementation phase.
 
 ---
 
@@ -84,7 +87,7 @@ Additional terms:
 | Layer | A group of components with one kind of responsibility (presentation, business logic or data access) |
 | Service | A business-logic component that implements one functional area |
 | Repository | A data-access object that reads and writes one kind of record |
-| Session credential | The value sent with each request to prove the user is logged in (for example a session cookie or token; the technology is not yet selected) |
+| Session credential | The value sent with each request to prove the user is logged in (for example an HTTP-only session cookie or authorization token; the specific library/mechanism is an implementation decision) |
 | Endpoint | One API operation, identified by an HTTP method and a path |
 
 ---
@@ -92,31 +95,36 @@ Additional terms:
 ## 2. Architectural Overview
 
 The BMS is a web application with three tiers: a browser-based **Presentation
-Layer**, a **Business Logic / Service Layer** running on the backend
-application/server, and a **Data Access / Persistence Layer** that stores data
-in a **relational database**.
+Layer** built with **React and Vite**, a **Business Logic / Service Layer**
+running on a **Node.js with Express** backend application server, and a
+**Data Access / Persistence Layer** that accesses a **MySQL relational database**.
+Communication between the frontend and backend is handled via a **REST API over HTTP**
+with structured JSON payloads.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │  Web browser: Customer / Bank Employee / Administrator      │
 └──────────────────────────────┬──────────────────────────────┘
-                               │ HTTP requests (planned REST-style API)
+                               │ REST API over HTTP (JSON payloads)
 ┌──────────────────────────────▼──────────────────────────────┐
-│  PRESENTATION LAYER                                         │
-│  Web User Interface: pages, forms, role-specific menus      │
+│  PRESENTATION LAYER (React SPA via Vite)                    │
+│  UI Components, Forms, Role Menus, State Management         │
 └──────────────────────────────┬──────────────────────────────┘
+                               │ Express Route Handlers & Middleware
 ┌──────────────────────────────▼──────────────────────────────┐
-│  BUSINESS LOGIC / SERVICE LAYER                             │
+│  BUSINESS LOGIC / SERVICE LAYER (Node.js + Express)         │
 │  Authentication & Authorization Service · Input Validation  │
 │  Customer Service · Account Service · Transaction Service   │
 │  Employee Administration Service · Reporting Service        │
 └──────────────────────────────┬──────────────────────────────┘
 ┌──────────────────────────────▼──────────────────────────────┐
-│  DATA ACCESS / PERSISTENCE LAYER                            │
-│  Repositories · parameterized queries · DB transactions     │
+│  DATA ACCESS / PERSISTENCE LAYER (Node.js Data Access)      │
+│  Repositories · Parameterized Queries · DB Transactions     │
 └──────────────────────────────┬──────────────────────────────┘
+                               │ SQL Protocol (Connection Pool)
 ┌──────────────────────────────▼──────────────────────────────┐
-│  RELATIONAL DATABASE (MySQL or equivalent)                  │
+│  RELATIONAL DATABASE (MySQL)                                │
+│  InnoDB engine, ACID transactions, constraints, DECIMAL     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -194,16 +202,18 @@ when the frontend is implemented. This fits inside the layered architecture.
 
 | Item | Description |
 |---|---|
-| Responsibility | Login page, role-specific dashboards and menus, forms for all use cases, confirmation screens and error messages |
-| Provides | Pages for Customers, Bank Employees and Administrators |
-| Uses | All services through the planned API (Section 9) |
+| Technology | React Single-Page Application (SPA) bundled and built with Vite |
+| Responsibility | Client-side routing, role-specific navigation menus and dashboards, forms for all use cases, client-side input validation for user experience, asynchronous HTTP REST API communication, confirmation screens and safe error messages |
+| Provides | Pages and views for Customers, Bank Employees and Administrators |
+| Uses | Express backend services through the planned REST API (Section 9) |
 | Requirements | NFR-11, NFR-12, NFR-13; presents all use cases UC-01 – UC-26 |
 
 #### CMP-02 Authentication & Authorization Service
 
 | Item | Description |
 |---|---|
-| Responsibility | Login and logout; password hashing and verification; creating, validating and invalidating sessions; checking the user's role for every protected request (RBAC); password change |
+| Technology | Node.js service module and Express middleware |
+| Responsibility | Login and logout; password hashing and verification using salted hashes (e.g. bcrypt/Argon2); creating, validating and invalidating sessions; checking the user's role on every protected request via Express RBAC middleware; password change |
 | Provides | `login`, `logout`, `changePassword`, `validateSession`, `authorize(role, operation)` |
 | Uses | Data Access Layer (user records) |
 | Requirements | FR-01, FR-02, FR-03, FR-22, NFR-01, NFR-02, NFR-03, NFR-05 |
@@ -212,7 +222,8 @@ when the frontend is implemented. This fits inside the layered architecture.
 
 | Item | Description |
 |---|---|
-| Responsibility | Checks required fields, data types, formats (e-mail, phone, dates), lengths and ranges (amount > 0 with at most 2 decimal places) before any business logic runs |
+| Technology | Node.js module and Express request validation middleware |
+| Responsibility | Validates required fields, data types, formats (e-mail, phone, dates), lengths and ranges (amount > 0 with at most 2 decimal places) on incoming HTTP request bodies, params and query strings before any business logic runs |
 | Provides | Validation rules used by all services; returns `VAL_001` with a list of invalid fields |
 | Uses | Nothing (no database access) |
 | Requirements | NFR-04, NFR-12, NFR-18 |
@@ -266,16 +277,18 @@ when the frontend is implemented. This fits inside the layered architecture.
 
 | Item | Description |
 |---|---|
-| Responsibility | Repositories for users, customers, employees, accounts and transactions; parameterized queries only; database transaction control (begin, commit, rollback, row locking) |
+| Technology | Node.js data access modules with MySQL connection pooling |
+| Responsibility | Repositories for users, customers, employees, accounts and transactions; parameterized SQL queries only; database transaction control (begin, commit, rollback, row locking) |
 | Provides | `UserRepository`, `CustomerRepository`, `EmployeeRepository`, `AccountRepository`, `TransactionRepository`, `withTransaction(...)` |
-| Uses | Relational Database |
+| Uses | Relational Database (MySQL) |
 | Requirements | NFR-09, NFR-14, NFR-16, NFR-17, NFR-18 |
 
 #### CMP-10 Relational Database
 
 | Item | Description |
 |---|---|
-| Responsibility | Durable storage; primary keys, unique, NOT NULL, foreign key and CHECK constraints; ACID transactions |
+| Technology | MySQL Community Edition with InnoDB storage engine |
+| Responsibility | Durable storage; primary keys, foreign keys, unique constraints, NOT NULL, and CHECK constraints (e.g., non-negative balance); ACID transactions with row-level locking |
 | Provides | Tables described in Section 7 |
 | Uses | — |
 | Requirements | NFR-08, NFR-09, NFR-16, NFR-18 |
@@ -371,21 +384,22 @@ response is returned (Section 10).
 
 | Control | Design | Requirement | Objective |
 |---|---|---|---|
-| **Password hashing** | Passwords are hashed with a salted, deliberately slow password-hashing algorithm (for example bcrypt or Argon2; the final choice depends on the backend framework). Only the hash is stored. Login compares hashes and never decrypts. | NFR-01 | SO-01, SO-03 |
+| **Password hashing** | Passwords are hashed with a salted, deliberately slow password-hashing algorithm in Node.js (for example bcrypt or Argon2; the specific library is an implementation decision). Only the hash is stored. Login compares hashes and never decrypts. | NFR-01 | SO-01, SO-03 |
 | **Generic login failure** | Unknown username, wrong password and deactivated user all return the same `AUTH_001` message. When the user is not found, a dummy hash comparison is performed so response times are similar. | FR-01 | SO-01 |
-| **Session / token validation** | After login, the server issues a random, unguessable session credential linked to the user ID and role. On every request the server checks that the credential is valid, not expired and not logged out, and that the user is still **ACTIVE** (so a deactivated employee's session stops working, FR-24). Sessions expire after a period of inactivity (15 minutes is proposed). The concrete technology (server session or token) is not yet selected. | FR-02, FR-24, NFR-05 | SO-03 |
+| **Session / token validation** | After login, the server issues a random, unguessable session credential linked to the user ID and role. On every request the Express authentication middleware checks that the credential is valid, not expired and not logged out, and that the user is still **ACTIVE** (so a deactivated employee's session stops working, FR-24). Sessions expire after a period of inactivity (15 minutes is proposed). The concrete session-storage technology (e.g., server session with secure HTTP-only cookies vs authorization tokens) is an implementation-phase decision. | FR-02, FR-24, NFR-05 | SO-03 |
 | **Logout** | Logout invalidates the session on the server, not only in the browser. | FR-02 | SO-03 |
-| **Role-based authorization** | A central role-to-operation table (Section 6.3) is checked for every request **on the server**. Hiding menu items in the UI is for usability only and is not relied on for security. | FR-03, NFR-02 | SO-03 |
+| **Role-based authorization** | A central role-to-operation table (Section 6.3) is checked for every request **on the server** via Express authorization middleware. Hiding menu items in the React UI is for usability only and is not relied on for security. | FR-03, NFR-02 | SO-03 |
 | **Ownership checks** | For Customer requests, the service checks that the account or customer ID in the request belongs to the logged-in customer. This prevents a customer from reading another customer's data by changing an ID. | NFR-03 | SO-01 |
 | **Protected routes / API operations** | Every endpoint except `POST /api/auth/login` requires a valid session. Each endpoint lists its allowed roles (Section 9). | NFR-05 | SO-03 |
 | **Input validation** | Server-side validation of every field before business logic. Invalid input is rejected with `VAL_001` and no data changes. | NFR-04, NFR-18 | SO-02 |
-| **Injection prevention** | The Data Access Layer uses only parameterized queries. User input is never concatenated into SQL. Output shown in pages is escaped to prevent script injection. | NFR-04 | SO-02 |
-| **Database transaction integrity** | Deposits, withdrawals and transfers run inside one database transaction with row locks. Any failure rolls back all changes. | NFR-09, NFR-17 | SO-02 |
+| **Injection prevention** | The Node.js Data Access Layer uses parameterized queries for all MySQL operations, which helps prevent SQL injection when used correctly by ensuring user input is treated strictly as parameters rather than executable SQL syntax. User input is never concatenated into SQL strings. Output rendered in React components is escaped automatically by the virtual DOM to help prevent script injection. | NFR-04 | SO-02 |
+| **Database transaction integrity** | Deposits, withdrawals and transfers run inside one database transaction with row locks in MySQL. Any failure rolls back all changes. | NFR-09, NFR-17 | SO-02 |
 | **Immutable transaction records** | The transaction table is insert-only through the application. | NFR-10 | SO-04 |
-| **Secure error handling** | Errors return a code and a safe message only; no stack traces, SQL, table names or password hashes (Section 10). | NFR-12 | SO-01 |
+| **Secure error handling** | Errors return a code and a safe message only; no stack traces, SQL, table names or password hashes (Section 10). Express central error-handling middleware catches unhandled exceptions and sanitizes output. | NFR-12 | SO-01 |
 | **Sensitive data in logs** | Logs never contain passwords, password hashes, session credentials or full personal details (Section 12). | NFR-01, NFR-03 | SO-01 |
+| **Secret management** | Database connection credentials, server port, and session signing keys are loaded through environment variables (e.g. `.env`) and never committed to version control. | NFR-01, NFR-03 | SO-01 |
 | **Transport** | HTTPS should be used whenever the prototype runs beyond a single local machine. | — | SO-01 |
-| **Database access** | The database accepts connections only from the backend server, using a dedicated database user with only the permissions the application needs. | NFR-03 | SO-01, SO-02 |
+| **Database access** | MySQL accepts connections only from the backend Express server, using a dedicated database user with only the permissions the application needs. | NFR-03 | SO-01, SO-02 |
 
 ### 6.3 Role-to-Operation Matrix
 
@@ -945,6 +959,7 @@ server log entry without exposing any details to the user:
 
 | Concern | Design | Requirement |
 |---|---|---|
+| Storage engine & consistency | MySQL with the InnoDB storage engine provides ACID transactions and row-level locking (`SELECT ... FOR UPDATE`), ensuring balance consistency and preventing race conditions during financial operations. | NFR-08, NFR-09, NFR-17 |
 | Atomicity | Each deposit, withdrawal or transfer runs inside one database transaction: balance update(s) + transaction record, then commit. Any error causes a rollback. | NFR-09, NFR-17 |
 | Lost updates | The account row(s) are locked (`SELECT ... FOR UPDATE`) before the balance is checked and changed, so two simultaneous operations cannot both use the same balance. | NFR-08, FR-16 |
 | Deadlocks | In a transfer, both account rows are always locked in ascending account ID order. | NFR-09 |
@@ -981,12 +996,12 @@ small local network:
 
 | Node | Runs | Notes |
 |---|---|---|
-| Client machine | Web browser (Chrome, Firefox or Edge) | Any team or evaluator laptop |
-| Application server | Web User Interface files and the backend application/server layer (all services and the Data Access Layer) | Framework to be selected in the design phase |
-| Database server | MySQL Community Edition or equivalent | Can be on the same machine as the application server; accepts connections only from the application server |
+| Client machine | Web browser (Chrome, Firefox or Edge) | Executes React single-page application built with Vite |
+| Application server | Node.js runtime executing the Express backend application | Serves REST API and coordinates services and Data Access Layer |
+| Database server | MySQL Community Edition (InnoDB engine) | Can run on the same machine as the application server; accepts connections only from the Node.js application server |
 
-Configuration values (database address, database user and password) are kept
-in a local configuration file or environment variables that are **not
+Configuration values (database host, port, database user and password, session secrets) are kept
+in environment variables (or a local `.env` configuration file) that are **not
 committed to GitHub**.
 
 ---
@@ -1001,6 +1016,18 @@ committed to GitHub**.
 | DD-04 | `DECIMAL` type for money | Avoids floating-point rounding errors | NFR-08 |
 | DD-05 | Insert-only transaction records | Records cannot be altered after the fact | NFR-10 |
 | DD-06 | Generic login error message | Prevents discovery of valid usernames | FR-01 |
-| DD-07 | Session technology left open | No backend framework selected yet (SRS C-08); the design only requires a server-validated, revocable session | FR-02, NFR-05 |
+| DD-07 | Session technology open to implementation | Backend framework is Node.js with Express (SRS C-08); concrete session mechanism (e.g. secure session cookie vs token) will be chosen during implementation | FR-02, NFR-05 |
 | DD-08 | Deposits and withdrawals are employee-only operations | Matches UC-15 and UC-16 (SRS A-03) | FR-12, FR-13 |
 | DD-09 | Standard error structure with error codes | Consistent UI messages and easier testing | NFR-12 |
+| DD-10 | Frontend: React with Vite | Modern component-based SPA architecture, fast build times, and clean UI state management | SRS C-01, NFR-11, NFR-13 |
+| DD-11 | Backend: Node.js with Express | Lightweight, modular RESTful API architecture with robust middleware support for auth and validation | SRS C-08, NFR-14 |
+| DD-12 | Database: MySQL (InnoDB) | Proven open-source relational database with robust ACID transactions and row locking | SRS C-02, NFR-08, NFR-09, NFR-17 |
+
+### 14.1 Unresolved Implementation Decisions
+
+To preserve flexibility and avoid premature constraints before coding begins, the following implementation choices are intentionally left to be established during the development phase:
+- **Concrete package versions:** Exact versions of React, Vite, Express, and runtime packages will be specified in `package.json` upon project initialization.
+- **Session/Token library:** Choice between HTTP-only cookie-based session middleware (e.g., `express-session` with a persistent store) or bearer tokens (e.g., JWT).
+- **Database driver/query approach:** Selection of the concrete MySQL access approach (e.g., `mysql2` connection pool with raw parameterized SQL vs query builder / ORM).
+- **Validation library:** Choice between schema validation libraries (such as Zod or Joi) or custom Express validation middleware.
+- **Production deployment infrastructure:** Target hosting platform, containerization (e.g. Docker), or reverse proxy configuration for post-prototype deployment.
