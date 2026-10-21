@@ -1,0 +1,24 @@
+{
+  "name": "bank-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Secure Core Banking Management System",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "lint:frontend": "npm --prefix frontend run lint",
+    "test:backend": "npm --prefix backend test",
+    "db:init": "node database/init.js",
+    "db:init:seed": "node database/init.js --seed"
+  },
+  "keywords": [
+    "banking",
+    "react",
+    "vite",
+    "express",
+    "mysql"
+  ],
+  "author": "",
+  "license": "ISC"
+}
