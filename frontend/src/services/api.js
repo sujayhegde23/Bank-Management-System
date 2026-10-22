@@ -24,6 +24,7 @@ export async function apiRequest(endpoint, options = {}) {
   };
 
   const config = {
+    credentials: 'include',
     ...options,
     headers: {
       ...defaultHeaders,
@@ -36,17 +37,19 @@ export async function apiRequest(endpoint, options = {}) {
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      const errorMsg = data?.error?.message || `Request failed with status ${response.status}`;
+      const errorMsg = data?.message || data?.error?.message || `Request failed with status ${response.status}`;
       const err = new Error(errorMsg);
       err.status = response.status;
-      err.code = data?.error?.code;
-      err.details = data?.error?.details;
+      err.code = data?.errorCode || data?.error?.code;
+      err.details = data?.error?.details || data?.fields;
       throw err;
     }
 
     return data;
   } catch (error) {
-    console.error(`API Request Error [${endpoint}]:`, error.message);
+    if (endpoint !== '/auth/me' || error.status !== 401) {
+      console.error(`API Request Error [${endpoint}]:`, error.message);
+    }
     throw error;
   }
 }
@@ -59,4 +62,45 @@ export async function apiRequest(endpoint, options = {}) {
 export async function getSystemHealth() {
   const response = await apiRequest('/health');
   return response?.data || response;
+}
+
+/**
+ * Authenticate user with username and password.
+ * @param {{ username: string, password: string }} credentials
+ * @returns {Promise<any>} Authenticated user safe profile
+ */
+export async function login(credentials) {
+  const response = await apiRequest('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(credentials)
+  });
+  return response?.data || response;
+}
+
+/**
+ * Terminate active session and clear cookie.
+ * @returns {Promise<any>}
+ */
+export async function logout() {
+  const response = await apiRequest('/auth/logout', {
+    method: 'POST'
+  });
+  return response?.data || response;
+}
+
+/**
+ * Retrieve active session safe profile if authenticated.
+ * Returns null if no active session (401).
+ * @returns {Promise<any|null>}
+ */
+export async function getCurrentUser() {
+  try {
+    const response = await apiRequest('/auth/me');
+    return response?.data || response;
+  } catch (error) {
+    if (error.status === 401) {
+      return null;
+    }
+    throw error;
+  }
 }

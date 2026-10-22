@@ -67,29 +67,32 @@ The technology stack has been finalized for the Bank Management System:
 ## Project Structure
 ```text
 Bank-Management-System/
-├── .env.example                # Safe environment variable template with placeholders
 ├── .gitignore                  # Excludes node_modules, .env, build artifacts, logs
 ├── package.json                # Root orchestration scripts
 ├── README.md                   # Project overview, documentation index, and local setup
 ├── database/                   # Database DDL schema, baseline seeds, and init script
 │   ├── README.md               # Schema documentation, tables, constraints, relationships
 │   ├── schema.sql              # MySQL 8.0+ InnoDB DDL (tables, PKs, FKs, CHECKs, indexes)
-│   ├── seed.sql                # Baseline academic test fixtures (test_plan.md Section 5)
+│   ├── seed.sql                # Baseline academic test fixtures with salted bcrypt hashes
 │   └── init.js                 # Automated database initialization runner
 ├── backend/                    # Node.js + Express REST API backend scaffold
-│   ├── .env.example            # Backend-specific environment template
+│   ├── .env.example            # Backend-specific environment template with session settings
 │   ├── package.json            # Backend dependencies, scripts, test runner
 │   ├── src/
-│   │   ├── app.js              # Express app setup and middleware pipeline
+│   │   ├── app.js              # Express app setup, session middleware, error pipeline
 │   │   ├── server.js           # Server entrypoint with graceful shutdown
 │   │   ├── config/
-│   │   │   └── db.js           # MySQL2 connection pool & parameterized query helper
+│   │   │   ├── db.js           # MySQL2 connection pool & parameterized query helper
+│   │   │   └── env.js          # Unified environment loader (.env priority resolution)
 │   │   ├── middleware/
+│   │   │   ├── auth.js         # requireAuth (live MySQL status check) & requireRole (RBAC)
 │   │   │   └── errorHandler.js # Standardized error envelopes conforming to Architecture §10
 │   │   └── routes/
-│   │       ├── index.js        # API route aggregator
+│   │       ├── index.js        # API route aggregator and test routes
+│   │       ├── auth.js         # Authentication endpoints (login, logout, me)
 │   │       └── health.js       # Health and database diagnostic endpoints
 │   └── tests/
+│       ├── auth.test.js        # Authentication & authorization integration test suite
 │       └── health.test.js      # Automated API health & 404 handler scaffold test suite
 ├── frontend/                   # React + Vite single page application scaffold
 │   ├── .env.example            # Frontend environment template (VITE_API_BASE_URL)
@@ -133,12 +136,12 @@ Ensure the following tools are installed on your workstation:
 - **Git**: v2.30 or higher
 
 ### 2. Environment Configuration
-Create your local environment configuration file from the safe example template:
+Create your local environment configuration file from the safe backend example template:
 ```bash
 # In the repository root:
-cp .env.example .env
+cp backend/.env.example .env
 ```
-Open `.env` and set your local MySQL connection credentials:
+Open `.env` and set your local MySQL connection credentials and session configuration:
 ```ini
 PORT=5000
 NODE_ENV=development
@@ -148,9 +151,36 @@ DB_USER=root
 DB_PASSWORD=your_local_mysql_password
 DB_NAME=bank_management_system
 CLIENT_URL=http://localhost:5173
-SESSION_SECRET=change_me_to_a_secure_random_string
+SESSION_SECRET=replace_with_a_secure_random_key_in_production
+SESSION_MAX_AGE_MINUTES=15
 ```
 > **Security Notice**: Never commit `.env` or any real credentials to Git. The `.gitignore` file automatically excludes `.env` and all `.env.local` files.
+
+### 2.1 Authentication & Session Management (Issue #5)
+
+#### Academic Test Accounts (Dummy Credentials)
+For local development and academic evaluation, the database seed (`database/seed.sql`) populates three documented dummy test accounts:
+| Role | Username | Test Password | Display Name | Note |
+|---|---|---|---|---|
+| **Customer** | `test.customer1` | `Password123!` | Test Customer One | Has active and inactive accounts |
+| **Employee** | `test.employee1` | `Password123!` | Test Employee One | Staff member |
+| **Admin** | `test.admin1` | `Password123!` | Administrator | System administrator |
+
+> **Academic Demonstration Notice**: `Password123!` is a shared dummy password intended strictly for local development and academic grading. Password hashes in `users` are salted using `bcryptjs` with 10 rounds so identical passwords produce distinct hashes. Never use real financial or personal credentials.
+
+#### Authentication Endpoints
+- **`POST /api/auth/login`**: Accepts `{ username, password }`. Validates input (`VAL_001`), looks up user with parameterized SQL, verifies salted bcrypt hash (with constant-time dummy compare for timing-attack mitigation on non-existent users), verifies user is `ACTIVE` (`AUTH_001`), regenerates session ID to prevent session fixation, and returns safe profile (`userId`, `username`, `role`, `displayName`).
+- **`POST /api/auth/logout`**: Requires active session. Destroys server-side session, clears the `bms.sid` cookie, and returns `{ success: true, data: { message: "Logged out" } }`. Subsequent requests with old session cookie are rejected (`AUTH_003`).
+- **`GET /api/auth/me`**: Requires active session (`requireAuth`). Verifies that the user still exists and remains `ACTIVE` in MySQL. Returns safe user profile without exposing secrets or hashes.
+
+#### Authorization & Security Middleware
+- **`requireAuth`**: Validates session presence and queries live MySQL `users` table on every protected request. If the user was deactivated or deleted, destroys the session, clears the cookie, and returns 401 (`AUTH_003`).
+- **`requireRole(...allowedRoles)`**: Enforces server-side RBAC against the architecture matrix. Returns 403 (`AUTH_002`) for unauthorized roles.
+
+#### Session Architecture & In-Memory Store Limitations
+- **Session Engine**: `express-session` with sliding 15-minute inactivity timeout (`rolling: true`), configured with `name: 'bms.sid'`, `httpOnly: true`, `sameSite: 'lax'`, and `secure: false` for local HTTP development (`secure: true` in production over HTTPS).
+- **In-Memory Store Limitation**: For this academic prototype, the default in-memory session store is used. **Restart behavior**: Restarting the backend process clears all active sessions. In production, a persistent multi-instance session store (e.g., Redis or a MySQL session store) is required.
+- **CSRF Consideration**: Session cookies are configured with `SameSite: 'lax'`, preventing cross-site transmission in cross-origin state-changing POST requests from external origins.
 
 ### 3. Install Dependencies
 Install dependencies for both backend and frontend applications:
@@ -211,8 +241,11 @@ The Vite development server will start at `http://localhost:5173` with hot modul
 
 ### 6. Running Tests and Verification Checks
 ```bash
-# Run backend automated scaffold tests (using Node.js native test runner)
+# Run all backend automated tests (health and authentication test suites)
 npm run test:backend
+
+# Or run tests directly from the backend directory:
+cd backend && npm test
 
 # Build the frontend production bundle to verify compilation
 npm run build:frontend

@@ -18,14 +18,14 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 -- ------------------------------------------------------------------------------
 -- 1. Insert Dummy Users
--- Dummy password hashes represent placeholder bcrypt hashes for '<valid password>'.
+-- Dummy password hashes represent valid salted bcrypt hashes for test password 'Password123!'.
 -- ------------------------------------------------------------------------------
 INSERT INTO users (user_id, username, password_hash, role, status) VALUES
-(1, 'test.admin1', '$2b$10$wT8K8U1yH4CqN0Xq7Z3CWeG5yH0bN2zL4pQ8vR6tS2uW1xY9zA3B.', 'ADMIN', 'ACTIVE'),
-(2, 'test.employee1', '$2b$10$wT8K8U1yH4CqN0Xq7Z3CWeG5yH0bN2zL4pQ8vR6tS2uW1xY9zA3B.', 'EMPLOYEE', 'ACTIVE'),
-(3, 'test.employee2', '$2b$10$wT8K8U1yH4CqN0Xq7Z3CWeG5yH0bN2zL4pQ8vR6tS2uW1xY9zA3B.', 'EMPLOYEE', 'ACTIVE'),
-(4, 'test.customer1', '$2b$10$wT8K8U1yH4CqN0Xq7Z3CWeG5yH0bN2zL4pQ8vR6tS2uW1xY9zA3B.', 'CUSTOMER', 'ACTIVE'),
-(5, 'test.customer2', '$2b$10$wT8K8U1yH4CqN0Xq7Z3CWeG5yH0bN2zL4pQ8vR6tS2uW1xY9zA3B.', 'CUSTOMER', 'ACTIVE');
+(1, 'test.admin1', '$2b$10$D7eHmaMDF6XYEFAKSlOAYu7wQDY5sBHMuEp6eg7VQYMV6RxjI9NmG', 'ADMIN', 'ACTIVE'),
+(2, 'test.employee1', '$2b$10$.eYmJrsfTNQKt9gstKkl8e0oRZkwYfwJCUzAtODkzGpnUwxybwQta', 'EMPLOYEE', 'ACTIVE'),
+(3, 'test.employee2', '$2b$10$zKkYnHaZac830D31ipxvOOHuvR1hgvwCvINVWcAjwEzliak1Ja1Hi', 'EMPLOYEE', 'ACTIVE'),
+(4, 'test.customer1', '$2b$10$kFkwl1RFJlZDZWdOrU/DKOa/OWtBxew8re7qqqrhY5JR9h0qDf.RO', 'CUSTOMER', 'ACTIVE'),
+(5, 'test.customer2', '$2b$10$Mrw2yDMVzkgRBSGb.GE3Z.4KbCQDaJQqSRxajFvOgAG3kUc2.f0mm', 'CUSTOMER', 'ACTIVE');
 
 -- ------------------------------------------------------------------------------
 -- 2. Insert Dummy Employee Profiles

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getSystemHealth } from './services/api';
+import { getSystemHealth, login, logout, getCurrentUser } from './services/api';
 import './App.css';
 
 const SCHEMA_DEFINITIONS = {
@@ -70,6 +70,14 @@ export default function App() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('accounts');
 
+  // Authentication & session management state
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState(null);
+  const [authSuccess, setAuthSuccess] = useState(null);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
   const checkHealth = async () => {
     setLoading(true);
     setError(null);
@@ -86,6 +94,8 @@ export default function App() {
 
   useEffect(() => {
     let isCancelled = false;
+
+    // Check system health diagnostic
     getSystemHealth()
       .then((data) => {
         if (!isCancelled) {
@@ -100,10 +110,68 @@ export default function App() {
         }
       });
 
+    // Rehydrate active session safe profile on page refresh / initial mount
+    getCurrentUser()
+      .then((user) => {
+        if (!isCancelled && user) {
+          setCurrentUser(user);
+        }
+      })
+      .catch(() => {
+        // Unauthenticated visitors remain guest
+      });
+
     return () => {
       isCancelled = true;
     };
   }, []);
+
+  const handleLogin = async (e) => {
+    e?.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      setAuthError('Please enter both username and password.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError(null);
+    setAuthSuccess(null);
+
+    try {
+      const user = await login({ username, password });
+      setCurrentUser(user);
+      setPassword('');
+      setAuthSuccess(`Authenticated successfully as ${user.displayName || user.username}`);
+    } catch (err) {
+      setAuthError(err.message || 'Invalid username or password');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setAuthLoading(true);
+    setAuthError(null);
+    setAuthSuccess(null);
+
+    try {
+      await logout();
+      setCurrentUser(null);
+      setUsername('');
+      setPassword('');
+      setAuthSuccess('Successfully logged out. Session destroyed.');
+    } catch (err) {
+      setAuthError(err.message || 'Logout failed');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleQuickFill = (u, p) => {
+    setUsername(u);
+    setPassword(p);
+    setAuthError(null);
+    setAuthSuccess(null);
+  };
 
   const currentSchema = SCHEMA_DEFINITIONS[activeTab];
   const healthData = health?.data || health;
@@ -127,7 +195,7 @@ export default function App() {
           <span className="badge badge-primary">React 19 + Vite</span>
           <span className="badge badge-primary">Node.js + Express</span>
           <span className="badge badge-primary">MySQL 8.0 InnoDB</span>
-          <span className="badge">Issue #15 Scaffold</span>
+          <span className="badge">Issue #5 Authentication</span>
         </div>
       </header>
 
@@ -138,6 +206,169 @@ export default function App() {
           A modular, secure, and auditable architecture built for financial operations,
           strict decimal precision, ACID transaction isolation, and role-based access control.
         </p>
+      </section>
+
+      {/* User Authentication & Session Management Card */}
+      <section className="auth-card" id="auth-card">
+        <div className="auth-header">
+          <div className="health-title-group">
+            <h2>
+              User Authentication & Session Control
+              {currentUser ? (
+                <span className="badge badge-success" id="auth-status-badge">
+                  Active Session ({currentUser.role})
+                </span>
+              ) : (
+                <span className="badge" id="auth-status-badge">
+                  Unauthenticated
+                </span>
+              )}
+            </h2>
+            <p>
+              Academic prototype authentication using bcryptjs salted hashing, HTTP-only cookie sessions, and server-side RBAC
+            </p>
+          </div>
+          {currentUser && (
+            <button
+              id="logout-btn"
+              className="btn-secondary"
+              onClick={handleLogout}
+              disabled={authLoading}
+            >
+              {authLoading ? 'Signing out...' : 'Sign Out'}
+            </button>
+          )}
+        </div>
+
+        {currentUser ? (
+          <div className="auth-profile-box" id="auth-profile-box">
+            <div className="auth-profile-details">
+              <div className="profile-field">
+                <span className="profile-field-label">User ID</span>
+                <span className="profile-field-value">{currentUser.userId}</span>
+              </div>
+              <div className="profile-field">
+                <span className="profile-field-label">Username</span>
+                <span className="profile-field-value">{currentUser.username}</span>
+              </div>
+              <div className="profile-field">
+                <span className="profile-field-label">Role</span>
+                <span className="profile-field-value">
+                  <span className={`badge ${currentUser.role === 'ADMIN' ? 'badge-danger' : currentUser.role === 'EMPLOYEE' ? 'badge-warning' : 'badge-primary'}`}>
+                    {currentUser.role}
+                  </span>
+                </span>
+              </div>
+              <div className="profile-field">
+                <span className="profile-field-label">Display Name</span>
+                <span className="profile-field-value">{currentUser.displayName || 'Administrator'}</span>
+              </div>
+              {currentUser.customerId && (
+                <div className="profile-field">
+                  <span className="profile-field-label">Customer ID</span>
+                  <span className="profile-field-value">{currentUser.customerId}</span>
+                </div>
+              )}
+              {currentUser.employeeId && (
+                <div className="profile-field">
+                  <span className="profile-field-label">Employee ID</span>
+                  <span className="profile-field-value">{currentUser.employeeId}</span>
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              🔒 Protected by <code>bms.sid</code> cookie &bull; 15-min sliding timeout
+            </div>
+          </div>
+        ) : (
+          <div>
+            <form className="auth-form" onSubmit={handleLogin} id="login-form">
+              <div className="form-group">
+                <label className="form-label" htmlFor="login-username">Username</label>
+                <input
+                  id="login-username"
+                  className="form-input"
+                  type="text"
+                  placeholder="e.g. test.customer1"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  autoComplete="username"
+                  disabled={authLoading}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="login-password">Password</label>
+                <input
+                  id="login-password"
+                  className="form-input"
+                  type="password"
+                  placeholder="Password123!"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  disabled={authLoading}
+                />
+              </div>
+              <div className="auth-actions">
+                <button
+                  id="login-submit-btn"
+                  className="btn-primary"
+                  type="submit"
+                  disabled={authLoading}
+                >
+                  {authLoading ? 'Authenticating...' : 'Sign In'}
+                </button>
+              </div>
+            </form>
+
+            <div className="auth-quick-fill">
+              <span>Quick-fill test accounts (Password: <code>Password123!</code>):</span>
+              <button
+                type="button"
+                className="quick-fill-btn"
+                onClick={() => handleQuickFill('test.customer1', 'Password123!')}
+              >
+                Customer (test.customer1)
+              </button>
+              <button
+                type="button"
+                className="quick-fill-btn"
+                onClick={() => handleQuickFill('test.employee1', 'Password123!')}
+              >
+                Employee (test.employee1)
+              </button>
+              <button
+                type="button"
+                className="quick-fill-btn"
+                onClick={() => handleQuickFill('test.admin1', 'Password123!')}
+              >
+                Admin (test.admin1)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {authError && (
+          <div className="auth-error-banner" id="auth-error-banner" role="alert">
+            <span>⚠️</span>
+            <span>{authError}</span>
+          </div>
+        )}
+
+        {authSuccess && !authError && (
+          <div
+            className="auth-error-banner"
+            style={{
+              background: 'var(--success-bg)',
+              borderColor: 'rgba(16, 185, 129, 0.3)',
+              color: '#6ee7b7'
+            }}
+            id="auth-success-banner"
+          >
+            <span>✓</span>
+            <span>{authSuccess}</span>
+          </div>
+        )}
       </section>
 
       {/* Diagnostic & Connection Status Card */}
@@ -326,9 +557,9 @@ export default function App() {
               <div className="step-number">1</div>
               <div className="step-title">Configure Environment</div>
             </div>
-            <pre className="step-code">cp .env.example .env</pre>
+            <pre className="step-code">cp backend/.env.example .env</pre>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-subtle)', marginTop: '0.5rem' }}>
-              Populate MySQL user and password in .env
+              Populate MySQL credentials and SESSION_SECRET in .env
             </p>
           </div>
           <div className="step-card">
@@ -366,7 +597,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="app-footer">
-        <p>Bank Management System &bull; Issue #15 Foundation &bull; Traceable to SRS & Phase 1 Architecture</p>
+        <p>Bank Management System &bull; Issue #5 User Authentication &bull; Traceable to SRS & Phase 1 Architecture</p>
       </footer>
     </div>
   );

@@ -8,12 +8,16 @@
  * ==============================================================================
  */
 
-const { describe, it } = require('node:test');
+const { describe, it, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
+const { pool } = require('../src/config/db');
 
 describe('Backend API Scaffold Tests', () => {
+  after(async () => {
+    await pool.end();
+  });
   it('GET / should return 200 with welcome message', async () => {
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
