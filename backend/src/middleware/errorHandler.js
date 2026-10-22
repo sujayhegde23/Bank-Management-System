@@ -28,6 +28,8 @@ function errorHandler(err, req, res, next) {
 
   res.status(statusCode).json({
     success: false,
+    errorCode: errorCode,
+    message: safeMessage,
     error: {
       code: errorCode,
       message: safeMessage,
