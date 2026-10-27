@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getSystemHealth, login, logout, getCurrentUser } from './services/api';
+import EmployeeManagement from './components/EmployeeManagement';
 import './App.css';
 
 const SCHEMA_DEFINITIONS = {
@@ -195,7 +196,7 @@ export default function App() {
           <span className="badge badge-primary">React 19 + Vite</span>
           <span className="badge badge-primary">Node.js + Express</span>
           <span className="badge badge-primary">MySQL 8.0 InnoDB</span>
-          <span className="badge">Issue #5 Authentication</span>
+          <span className="badge">Issue #11 Employee Management</span>
         </div>
       </header>
 
@@ -370,6 +371,11 @@ export default function App() {
           </div>
         )}
       </section>
+
+      {/* Employee Management Console (Admin-Only) */}
+      {currentUser?.role === 'ADMIN' && (
+        <EmployeeManagement currentUser={currentUser} />
+      )}
 
       {/* Diagnostic & Connection Status Card */}
       <section className="health-card" id="health-card">

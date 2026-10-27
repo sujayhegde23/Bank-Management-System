@@ -10,6 +10,7 @@ const express = require('express');
 const router = express.Router();
 const healthRouter = require('./health');
 const authRouter = require('./auth');
+const employeesRouter = require('./employees');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
 // Root API information endpoint
@@ -20,12 +21,13 @@ router.get('/', (req, res) => {
       name: 'Bank Management System API',
       version: '1.0.0',
       description: 'REST API backend for Customer, Employee, and Administrator banking operations',
-      phase: 'Phase 1 - Authentication & Foundation',
+      phase: 'Phase 1 - Employee Administration & Authentication Foundation',
       endpoints: {
         health: 'GET /api/health',
         login: 'POST /api/auth/login',
         logout: 'POST /api/auth/logout',
-        me: 'GET /api/auth/me'
+        me: 'GET /api/auth/me',
+        employees: 'GET /api/employees, POST /api/employees, PUT /api/employees/:id, PATCH /api/employees/:id/status'
       }
     }
   });
@@ -33,6 +35,9 @@ router.get('/', (req, res) => {
 
 // Authentication routes
 router.use('/auth', authRouter);
+
+// Employee administration routes (Issue #11)
+router.use('/employees', employeesRouter);
 
 // Health check routes
 router.use('/', healthRouter);
