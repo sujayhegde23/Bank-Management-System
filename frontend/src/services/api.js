@@ -104,3 +104,71 @@ export async function getCurrentUser() {
     throw error;
   }
 }
+
+/**
+ * ==============================================================================
+ * Employee Management API (Admin-Only)
+ * ==============================================================================
+ */
+
+/**
+ * Fetch list of all registered employee records.
+ * @returns {Promise<Array<any>>}
+ */
+export async function getEmployees() {
+  const response = await apiRequest('/employees');
+  return response?.data?.employees || response?.employees || [];
+}
+
+/**
+ * Fetch a single employee record by ID.
+ * @param {string|number} employeeId
+ * @returns {Promise<any>}
+ */
+export async function getEmployee(employeeId) {
+  const response = await apiRequest(`/employees/${employeeId}`);
+  return response?.data?.employee || response?.employee || response?.data || response;
+}
+
+/**
+ * Create a new employee record and linked user account in an atomic transaction.
+ * @param {{ username: string, password: string, fullName: string, email: string, phone: string }} data
+ * @returns {Promise<any>}
+ */
+export async function createEmployee(data) {
+  const response = await apiRequest('/employees', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  return response?.data?.employee || response?.employee || response?.data || response;
+}
+
+/**
+ * Update permitted profile fields for an existing employee.
+ * Protected fields (role, username, user_id, password) are rejected by the backend.
+ * @param {string|number} employeeId
+ * @param {{ fullName: string, email: string, phone?: string }} data
+ * @returns {Promise<any>}
+ */
+export async function updateEmployee(employeeId, data) {
+  const response = await apiRequest(`/employees/${employeeId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+  return response?.data?.employee || response?.employee || response?.data || response;
+}
+
+/**
+ * Activate or deactivate an employee account.
+ * Deactivation immediately revokes user access on their next authenticated request.
+ * @param {string|number} employeeId
+ * @param {'ACTIVE'|'INACTIVE'} status
+ * @returns {Promise<any>}
+ */
+export async function updateEmployeeStatus(employeeId, status) {
+  const response = await apiRequest(`/employees/${employeeId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status })
+  });
+  return response?.data?.employee || response?.employee || response?.data || response;
+}

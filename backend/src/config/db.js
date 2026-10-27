@@ -50,8 +50,54 @@ async function testConnection() {
   }
 }
 
+/**
+ * Execute a series of database operations within an isolated database transaction.
+ * Automatically handles beginTransaction, commit, rollback, and connection release.
+ * @param {Function} callback - Async function receiving the active connection (conn)
+ * @returns {Promise<any>} Result returned by the callback
+ */
+async function withTransaction(callback) {
+  const connection = await pool.getConnection();
+  let transactionStarted = false;
+  let connectionDestroyed = false;
+
+  try {
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    const result = await callback(connection);
+
+    await connection.commit();
+    transactionStarted = false;
+
+    return result;
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await connection.rollback();
+      } catch {
+        // Preserve the original error.
+        // A rollback failure requires discarding the connection so it is not returned to the pool in an unsafe state.
+        try {
+          connection.destroy();
+        } catch {
+          // Ignore destroy errors
+        }
+        connectionDestroyed = true;
+      }
+    }
+
+    throw error;
+  } finally {
+    if (!connectionDestroyed) {
+      connection.release();
+    }
+  }
+}
+
 module.exports = {
   pool,
   query,
+  withTransaction,
   testConnection
 };
