@@ -175,3 +175,90 @@ export async function updateEmployeeStatus(employeeId, status) {
   });
   return response?.data?.employee || response?.employee || response?.data || response;
 }
+
+/**
+ * ==============================================================================
+ * Customer Directory API (Issue #7 Support)
+ * ==============================================================================
+ */
+
+/**
+ * Fetch registered customers directory for account creation lookup.
+ * @param {{ search?: string }} [params]
+ * @returns {Promise<Array<any>>}
+ */
+export async function getCustomers(params = {}) {
+  const query = new URLSearchParams();
+  if (params.search) query.append('search', params.search);
+  const endpoint = `/customers${query.toString() ? `?${query.toString()}` : ''}`;
+  const response = await apiRequest(endpoint);
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+  return Array.isArray(response) ? response : [];
+}
+
+/**
+ * ==============================================================================
+ * Bank Account Management API (Issue #7)
+ * ==============================================================================
+ */
+
+/**
+ * Fetch list of bank accounts (filtered by customerId, status, accountType, or search).
+ * @param {{ customerId?: number, status?: string, accountType?: string, search?: string }} [filters]
+ * @returns {Promise<Array<any>>}
+ */
+export async function getAccounts(filters = {}) {
+  const query = new URLSearchParams();
+  if (filters.customerId) query.append('customerId', filters.customerId);
+  if (filters.status) query.append('status', filters.status);
+  if (filters.accountType) query.append('accountType', filters.accountType);
+  if (filters.search) query.append('search', filters.search);
+
+  const endpoint = `/accounts${query.toString() ? `?${query.toString()}` : ''}`;
+  const response = await apiRequest(endpoint);
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+  return Array.isArray(response) ? response : [];
+}
+
+/**
+ * Fetch a single bank account details and current balance.
+ * @param {string|number} accountId
+ * @returns {Promise<any>}
+ */
+export async function getAccount(accountId) {
+  const response = await apiRequest(`/accounts/${accountId}`);
+  return response?.data || response;
+}
+
+/**
+ * Create a new bank account for an existing registered customer.
+ * Server allocates unique account number and enforces zero initial balance.
+ * @param {{ customerId: number, accountType: 'SAVINGS'|'CURRENT' }} data
+ * @returns {Promise<any>}
+ */
+export async function createAccount(data) {
+  const response = await apiRequest('/accounts', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  return response?.data || response;
+}
+
+/**
+ * Update the status of a bank account (ACTIVE, INACTIVE, FROZEN).
+ * @param {string|number} accountId
+ * @param {'ACTIVE'|'INACTIVE'|'FROZEN'} status
+ * @param {string} [reason]
+ * @returns {Promise<any>}
+ */
+export async function updateAccountStatus(accountId, status, reason = '') {
+  const response = await apiRequest(`/accounts/${accountId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, reason })
+  });
+  return response?.data || response;
+}

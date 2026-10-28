@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { getSystemHealth, login, logout, getCurrentUser } from './services/api';
+import { useState, useEffect, useCallback } from 'react';
+import { getSystemHealth, login, logout, getCurrentUser, getAccounts } from './services/api';
 import EmployeeManagement from './components/EmployeeManagement';
+import AccountManagement from './components/AccountManagement';
 import './App.css';
 
 /* ==============================================================================
@@ -13,17 +14,6 @@ function IconBuilding({ size = 20, className = '' }) {
       <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
       <path d="M9 22v-4h6v4" />
       <path d="M8 6h.01M16 6h.01M8 10h.01M16 10h.01M8 14h.01M16 14h.01" />
-    </svg>
-  );
-}
-
-function IconLayoutDashboard({ size = 18, className = '' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <rect x="3" y="3" width="7" height="9" />
-      <rect x="14" y="3" width="7" height="5" />
-      <rect x="14" y="12" width="7" height="9" />
-      <rect x="3" y="16" width="7" height="5" />
     </svg>
   );
 }
@@ -91,7 +81,6 @@ function IconActivity({ size = 18, className = '' }) {
   );
 }
 
-
 function IconLogOut({ size = 16, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -142,14 +131,14 @@ function IconClock({ size = 18, className = '' }) {
 const SCHEMA_DEFINITIONS = {
   accounts: {
     title: 'accounts',
-    description: 'Core financial accounts owned by customers. Enforces non-negative balance and unique account numbers.',
+    description: 'Core financial accounts owned by customers. Enforces non-negative balance and unique account numbers (FR-07, FR-08, FR-11).',
     columns: [
       { name: 'account_id', type: 'BIGINT AUTO_INCREMENT', key: 'PK', desc: 'Internal surrogate identifier' },
-      { name: 'account_number', type: 'VARCHAR(30)', key: 'UK', desc: 'Public alphanumeric account identifier (e.g. ACC-T1)' },
+      { name: 'account_number', type: 'VARCHAR(30)', key: 'UK', desc: 'Public alphanumeric account identifier (e.g. ACC-SB-XXXXXXXX)' },
       { name: 'customer_id', type: 'BIGINT', key: 'FK', desc: 'References customers(customer_id) ON DELETE RESTRICT' },
-      { name: 'account_type', type: 'VARCHAR(20)', key: '', desc: 'Savings or Checking account category' },
+      { name: 'account_type', type: 'VARCHAR(20)', key: '', desc: 'Savings or Current account category' },
       { name: 'balance', type: 'DECIMAL(15,2)', key: 'CHECK', desc: 'Current balance; CHECK (balance >= 0.00)' },
-      { name: 'status', type: 'ENUM("ACTIVE","INACTIVE","FROZEN")', key: '', desc: 'Account operational status' },
+      { name: 'status', type: 'ENUM("ACTIVE","INACTIVE","FROZEN")', key: '', desc: 'Account operational status (FR-10, FR-11)' },
       { name: 'opened_at', type: 'DATETIME', key: '', desc: 'Record creation timestamp' },
       { name: 'updated_at', type: 'DATETIME', key: '', desc: 'Auto-updating modification timestamp' }
     ],
@@ -159,43 +148,57 @@ const SCHEMA_DEFINITIONS = {
     title: 'bank_transactions',
     description: 'Immutable ledger entries capturing deposits, withdrawals, and transfers with strict referential integrity.',
     columns: [
-      { name: 'transaction_id', type: 'BIGINT AUTO_INCREMENT', key: 'PK', desc: 'Internal ledger identifier' },
-      { name: 'transaction_ref', type: 'VARCHAR(64)', key: 'UK', desc: 'Unique UUID/idempotency reference (TXN-...)' },
-      { name: 'type', type: 'ENUM("DEPOSIT","WITHDRAWAL","TRANSFER")', key: '', desc: 'Transaction category' },
-      { name: 'amount', type: 'DECIMAL(15,2)', key: 'CHECK', desc: 'Transaction value; CHECK (amount > 0.00)' },
-      { name: 'source_account_id', type: 'BIGINT', key: 'FK', desc: 'NULL for DEPOSIT; references accounts(account_id)' },
-      { name: 'destination_account_id', type: 'BIGINT', key: 'FK', desc: 'NULL for WITHDRAWAL; references accounts(account_id)' },
-      { name: 'performed_by_user_id', type: 'BIGINT', key: 'FK', desc: 'Actor user ID; references users(user_id)' },
-      { name: 'remarks', type: 'VARCHAR(255)', key: '', desc: 'Optional transaction audit remarks' },
-      { name: 'created_at', type: 'DATETIME', key: '', desc: 'Immutable transaction timestamp' }
+      { name: 'transaction_id', type: 'BIGINT AUTO_INCREMENT', key: 'PK', desc: 'Surrogate ledger transaction ID' },
+      { name: 'transaction_ref', type: 'VARCHAR(64)', key: 'UK', desc: 'Unique transaction identifier (e.g. TXN-INIT-001)' },
+      { name: 'type', type: 'ENUM("DEPOSIT","WITHDRAWAL","TRANSFER")', key: '', desc: 'Financial transaction category' },
+      { name: 'amount', type: 'DECIMAL(15,2)', key: 'CHECK', desc: 'Positive monetary amount; CHECK (amount > 0.00)' },
+      { name: 'source_account_id', type: 'BIGINT', key: 'FK', desc: 'Debit account for withdrawals & transfers' },
+      { name: 'destination_account_id', type: 'BIGINT', key: 'FK', desc: 'Credit account for deposits & transfers' },
+      { name: 'performed_by_user_id', type: 'BIGINT', key: 'FK', desc: 'Staff or customer initiating the transaction' },
+      { name: 'remarks', type: 'VARCHAR(255)', key: '', desc: 'Optional audit remarks' },
+      { name: 'created_at', type: 'DATETIME', key: '', desc: 'Ledger insertion timestamp' }
     ],
-    constraints: 'PRIMARY KEY (transaction_id), UNIQUE KEY (transaction_ref), FKs to accounts and users, CHECK (amount > 0.00), ENGINE=InnoDB'
+    constraints: 'PRIMARY KEY (transaction_id), UNIQUE KEY (transaction_ref), FOREIGN KEY (source_account_id, destination_account_id), CHECK (amount > 0.00), ENGINE=InnoDB'
+  },
+  employees: {
+    title: 'employees',
+    description: 'Bank staff profile linked 1-to-1 with a USER record.',
+    columns: [
+      { name: 'employee_id', type: 'BIGINT AUTO_INCREMENT', key: 'PK', desc: 'Surrogate staff ID' },
+      { name: 'user_id', type: 'BIGINT', key: 'UK / FK', desc: 'Links to users(user_id) ON DELETE RESTRICT' },
+      { name: 'full_name', type: 'VARCHAR(100)', key: '', desc: 'Employee legal name' },
+      { name: 'email', type: 'VARCHAR(100)', key: 'INDEX', desc: 'Official staff email address' },
+      { name: 'phone', type: 'VARCHAR(20)', key: '', desc: 'Contact telephone' },
+      { name: 'created_at', type: 'DATETIME', key: '', desc: 'Creation timestamp' },
+      { name: 'updated_at', type: 'DATETIME', key: '', desc: 'Last update timestamp' }
+    ],
+    constraints: 'PRIMARY KEY (employee_id), UNIQUE KEY (user_id), FOREIGN KEY (user_id) REFERENCES users(user_id), ENGINE=InnoDB'
   },
   users: {
     title: 'users',
-    description: 'System authentication identity records. Supports Admin, Employee, and Customer roles.',
+    description: 'System authentication credentials, roles, and account statuses.',
     columns: [
-      { name: 'user_id', type: 'BIGINT AUTO_INCREMENT', key: 'PK', desc: 'Surrogate user identity identifier' },
-      { name: 'username', type: 'VARCHAR(50)', key: 'UK', desc: 'Unique lowercase username' },
-      { name: 'password_hash', type: 'VARCHAR(255)', key: '', desc: 'Salted bcrypt hash' },
-      { name: 'role', type: 'ENUM("ADMIN","EMPLOYEE","CUSTOMER")', key: '', desc: 'Role-based access classification' },
-      { name: 'status', type: 'ENUM("ACTIVE","INACTIVE")', key: '', desc: 'Account authorization state' },
-      { name: 'created_at', type: 'DATETIME', key: '', desc: 'Creation timestamp' },
-      { name: 'updated_at', type: 'DATETIME', key: '', desc: 'Auto-updating modification timestamp' }
+      { name: 'user_id', type: 'BIGINT AUTO_INCREMENT', key: 'PK', desc: 'Surrogate user identifier' },
+      { name: 'username', type: 'VARCHAR(50)', key: 'UK', desc: 'Unique login handle' },
+      { name: 'password_hash', type: 'VARCHAR(255)', key: '', desc: 'Salted bcrypt one-way hash (cost factor 10)' },
+      { name: 'role', type: 'ENUM("CUSTOMER","EMPLOYEE","ADMIN")', key: 'INDEX', desc: 'RBAC authorization level' },
+      { name: 'status', type: 'ENUM("ACTIVE","INACTIVE")', key: 'INDEX', desc: 'Account authorization state' },
+      { name: 'created_at', type: 'DATETIME', key: '', desc: 'Account creation date' },
+      { name: 'updated_at', type: 'DATETIME', key: '', desc: 'Last modification date' }
     ],
     constraints: 'PRIMARY KEY (user_id), UNIQUE KEY (username), ENGINE=InnoDB'
   },
   customers: {
     title: 'customers',
-    description: 'Customer profile details linked 1:1 with users table.',
+    description: 'Customer profiles linked 1-to-1 with user logins.',
     columns: [
       { name: 'customer_id', type: 'BIGINT AUTO_INCREMENT', key: 'PK', desc: 'Surrogate customer identifier' },
-      { name: 'user_id', type: 'BIGINT', key: 'UK, FK', desc: '1:1 relationship to users(user_id) ON DELETE RESTRICT' },
-      { name: 'full_name', type: 'VARCHAR(100)', key: '', desc: 'Customer full legal name' },
-      { name: 'date_of_birth', type: 'DATE', key: '', desc: 'Date of birth' },
-      { name: 'phone', type: 'VARCHAR(20)', key: '', desc: 'Contact phone number' },
-      { name: 'email', type: 'VARCHAR(100)', key: '', desc: 'Contact email address' },
-      { name: 'address', type: 'VARCHAR(255)', key: '', desc: 'Mailing/residential address' }
+      { name: 'user_id', type: 'BIGINT', key: 'UK / FK', desc: 'Links to users(user_id)' },
+      { name: 'full_name', type: 'VARCHAR(100)', key: '', desc: 'Customer full name' },
+      { name: 'date_of_birth', type: 'DATE', key: '', desc: 'Customer birth date' },
+      { name: 'phone', type: 'VARCHAR(20)', key: 'INDEX', desc: 'Phone contact' },
+      { name: 'email', type: 'VARCHAR(100)', key: 'INDEX', desc: 'Email contact' },
+      { name: 'address', type: 'VARCHAR(255)', key: '', desc: 'Residential address' }
     ],
     constraints: 'PRIMARY KEY (customer_id), UNIQUE KEY (user_id), FOREIGN KEY (user_id) REFERENCES users(user_id), ENGINE=InnoDB'
   }
@@ -208,8 +211,12 @@ export default function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  // Navigation tab state
-  const [activeNav, setActiveNav] = useState('main'); // 'main' | 'diagnostics'
+  // Navigation tab state: 'accounts' | 'employees' | 'diagnostics' | 'overview'
+  const [activeNav, setActiveNav] = useState('accounts');
+
+  // Customer retail accounts state (FR-09)
+  const [customerAccounts, setCustomerAccounts] = useState([]);
+  const [custAccountsLoading, setCustAccountsLoading] = useState(false);
 
   // Diagnostic state
   const [health, setHealth] = useState(null);
@@ -230,6 +237,19 @@ export default function App() {
       setHealthLoading(false);
     }
   };
+
+  // Fetch customer accounts for retail banking view (FR-09)
+  const loadCustomerAccounts = useCallback(async () => {
+    setCustAccountsLoading(true);
+    try {
+      const data = await getAccounts();
+      setCustomerAccounts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.warn('Could not load customer accounts:', err.message);
+    } finally {
+      setCustAccountsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -254,6 +274,14 @@ export default function App() {
       .then((user) => {
         if (!isCancelled && user) {
           setCurrentUser(user);
+          // Set sensible initial navigation based on role
+          if (user.role === 'ADMIN') {
+            setActiveNav('employees');
+          } else if (user.role === 'EMPLOYEE') {
+            setActiveNav('accounts');
+          } else {
+            setActiveNav('overview');
+          }
         }
       })
       .catch(() => {
@@ -264,6 +292,21 @@ export default function App() {
       isCancelled = true;
     };
   }, []);
+
+  // When active user is Customer, fetch their accounts live (FR-09)
+  useEffect(() => {
+    let ignore = false;
+    if (currentUser?.role === 'CUSTOMER') {
+      Promise.resolve().then(() => {
+        if (!ignore) {
+          loadCustomerAccounts().catch(() => {});
+        }
+      });
+    }
+    return () => {
+      ignore = true;
+    };
+  }, [currentUser, loadCustomerAccounts]);
 
   const handleLogin = async (e) => {
     e?.preventDefault();
@@ -278,7 +321,13 @@ export default function App() {
       const user = await login({ username, password });
       setCurrentUser(user);
       setPassword('');
-      setActiveNav('main');
+      if (user.role === 'ADMIN') {
+        setActiveNav('employees');
+      } else if (user.role === 'EMPLOYEE') {
+        setActiveNav('accounts');
+      } else {
+        setActiveNav('overview');
+      }
     } catch (err) {
       setAuthError(err.message || 'Invalid username or password');
     } finally {
@@ -295,7 +344,8 @@ export default function App() {
       setCurrentUser(null);
       setUsername('');
       setPassword('');
-      setActiveNav('main');
+      setActiveNav('accounts');
+      setCustomerAccounts([]);
     } catch (err) {
       setAuthError(err.message || 'Logout failed');
     } finally {
@@ -303,28 +353,22 @@ export default function App() {
     }
   };
 
-  const handleQuickFill = (u, p) => {
-    setUsername(u);
-    setPassword(p);
+  // Quick fill testing helper
+  const handleQuickFill = (user, pass) => {
+    setUsername(user);
+    setPassword(pass);
     setAuthError(null);
   };
 
+  // Diagnostic mapping
   const healthData = health?.data || health;
   const isDbConnected = Boolean(
     healthData?.database?.connected ??
     (healthData?.database?.status?.toLowerCase() === 'connected')
   );
 
-  // User avatar initials
-  const userInitials = (currentUser?.displayName || currentUser?.username || 'US')
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .substring(0, 2)
-    .toUpperCase();
-
   // ----------------------------------------------------------------------------
-  // SCENARIO 1: UNAUTHENTICATED VISITOR (Modern Banking Login Screen)
+  // SCENARIO 1: UNAUTHENTICATED (Login Screen)
   // ----------------------------------------------------------------------------
   if (!currentUser) {
     return (
@@ -332,31 +376,31 @@ export default function App() {
         <div className="login-screen-card">
           <div className="login-brand-header">
             <div className="login-brand-logo">
-              <IconBuilding size={26} />
+              <IconBuilding size={24} />
             </div>
             <div>
-              <h2 className="login-bank-name">CORE BANK</h2>
-              <p className="login-portal-subtitle">Secure Banking Portal</p>
+              <h1 className="login-bank-name">CORE BANK</h1>
+              <p className="login-portal-subtitle">Bank Management System</p>
             </div>
           </div>
 
-          <form className="login-form" onSubmit={handleLogin} id="login-form">
-            {authError && (
-              <div className="login-error-alert" role="alert" id="auth-error-banner">
-                <IconAlertCircle size={16} />
-                <span>{authError}</span>
-              </div>
-            )}
+          {authError && (
+            <div className="login-error-alert" role="alert">
+              <IconAlertCircle size={16} />
+              <span>{authError}</span>
+            </div>
+          )}
 
+          <form onSubmit={handleLogin} className="login-form">
             <div className="login-field-group">
-              <label className="login-label" htmlFor="login-username">
+              <label htmlFor="login-username" className="login-label">
                 Username
               </label>
               <input
                 id="login-username"
                 className="login-input"
                 type="text"
-                placeholder="e.g. test.admin1"
+                placeholder="e.g. test.employee1 or test.admin1"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
@@ -366,7 +410,7 @@ export default function App() {
             </div>
 
             <div className="login-field-group">
-              <label className="login-label" htmlFor="login-password">
+              <label htmlFor="login-password" className="login-label">
                 Password
               </label>
               <input
@@ -398,19 +442,19 @@ export default function App() {
             <div className="quickfill-buttons-grid">
               <button
                 type="button"
-                className="quickfill-btn admin-quickfill"
-                onClick={() => handleQuickFill('test.admin1', 'Password123!')}
-              >
-                <IconShield size={13} />
-                <span>Admin (test.admin1) &bull; Employee Admin</span>
-              </button>
-              <button
-                type="button"
                 className="quickfill-btn employee-quickfill"
                 onClick={() => handleQuickFill('test.employee1', 'Password123!')}
               >
                 <IconUserCheck size={13} />
-                <span>Employee (test.employee1) &bull; Branch Staff</span>
+                <span>Employee (test.employee1) &bull; Bank Accounts (Issue #7)</span>
+              </button>
+              <button
+                type="button"
+                className="quickfill-btn admin-quickfill"
+                onClick={() => handleQuickFill('test.admin1', 'Password123!')}
+              >
+                <IconShield size={13} />
+                <span>Admin (test.admin1) &bull; Employee Admin (Issue #11)</span>
               </button>
               <button
                 type="button"
@@ -418,7 +462,7 @@ export default function App() {
                 onClick={() => handleQuickFill('test.customer1', 'Password123!')}
               >
                 <IconUsers size={13} />
-                <span>Customer (test.customer1) &bull; Account Holder</span>
+                <span>Customer (test.customer1) &bull; Retail View (FR-09)</span>
               </button>
             </div>
           </div>
@@ -439,6 +483,13 @@ export default function App() {
   const isEmployee = currentUser.role === 'EMPLOYEE';
   const isCustomer = currentUser.role === 'CUSTOMER';
 
+  const userInitials = (currentUser.displayName || currentUser.username)
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
+
   return (
     <div className="dashboard-layout-root">
       {/* ------------------------------------------------------------------------
@@ -458,23 +509,36 @@ export default function App() {
           </div>
         </div>
 
-        {/* Navigation Items */}
-        <nav className="sidebar-nav" aria-label="Portal Navigation">
+        {/* Navigation Sections */}
+        <nav className="sidebar-nav-menu">
           <div className="sidebar-group-title">
-            {isAdmin ? 'Administration' : isEmployee ? 'Branch Operations' : 'My Accounts'}
+            {isAdmin ? 'Administration' : isEmployee ? 'Branch Operations' : 'Account Services'}
           </div>
 
-          {/* ADMIN NAVIGATION */}
+          {/* ADMINISTRATOR NAVIGATION */}
           {isAdmin && (
             <>
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Dashboard overview module is scheduled for future release"
+              {/* Employee Management (Issue #11) */}
+              <button
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'employees' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('employees')}
               >
-                <IconLayoutDashboard size={17} />
-                <span>Dashboard</span>
-                <span className="nav-badge-pending">Soon</span>
-              </div>
+                <IconUserCheck size={17} />
+                <span>Employees</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
+
+              {/* Bank Accounts Oversight (Issue #7) */}
+              <button
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'accounts' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('accounts')}
+              >
+                <IconLandmark size={17} />
+                <span>Bank Accounts</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
 
               <div
                 className="sidebar-nav-item disabled-item"
@@ -487,32 +551,12 @@ export default function App() {
 
               <div
                 className="sidebar-nav-item disabled-item"
-                title="Account management scheduled for Sprint 2"
-              >
-                <IconLandmark size={17} />
-                <span>Accounts</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
-
-              <div
-                className="sidebar-nav-item disabled-item"
                 title="Transaction processing scheduled for Sprint 2"
               >
                 <IconCreditCard size={17} />
                 <span>Transactions</span>
                 <span className="nav-badge-pending">Sprint 2</span>
               </div>
-
-              {/* ACTIVE Employees Section */}
-              <button
-                type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'main' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('main')}
-              >
-                <IconUserCheck size={17} />
-                <span>Employees</span>
-                <span className="nav-badge-active">Active</span>
-              </button>
 
               <div
                 className="sidebar-nav-item disabled-item"
@@ -528,14 +572,25 @@ export default function App() {
           {/* EMPLOYEE NAVIGATION */}
           {isEmployee && (
             <>
+              {/* Manage Accounts (Issue #7 — Primary Functional Module) */}
+              <button
+                id="nav-manage-accounts-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'accounts' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('accounts')}
+              >
+                <IconLandmark size={17} />
+                <span>Manage Accounts</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
+
               <button
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'main' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('main')}
+                className={`sidebar-nav-item ${activeNav === 'overview' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('overview')}
               >
                 <IconUserCheck size={17} />
                 <span>Staff Overview</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <div
@@ -544,15 +599,6 @@ export default function App() {
               >
                 <IconUsers size={17} />
                 <span>Register Customer</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
-
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Account opening and status management scheduled for Sprint 2 (FR-07)"
-              >
-                <IconLandmark size={17} />
-                <span>Manage Accounts</span>
                 <span className="nav-badge-pending">Sprint 2</span>
               </div>
 
@@ -581,22 +627,13 @@ export default function App() {
             <>
               <button
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'main' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('main')}
+                className={`sidebar-nav-item active-item ${activeNav === 'overview' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('overview')}
               >
                 <IconLandmark size={17} />
                 <span>Account Overview</span>
                 <span className="nav-badge-active">Active</span>
               </button>
-
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Account balance viewing scheduled for Sprint 2 (FR-09)"
-              >
-                <IconCreditCard size={17} />
-                <span>My Accounts</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
 
               <div
                 className="sidebar-nav-item disabled-item"
@@ -652,33 +689,33 @@ export default function App() {
             className="sidebar-logout-btn"
             onClick={handleLogout}
             disabled={authLoading}
-            title="Sign out of current banking session"
+            title="Terminate session and sign out"
           >
             <IconLogOut size={16} />
-            <span>Logout</span>
+            <span>Sign Out</span>
           </button>
         </div>
       </aside>
 
       {/* ------------------------------------------------------------------------
-          MAIN APPLICATION VIEWPORT
+          MAIN VIEWPORT & TOPBAR
           ------------------------------------------------------------------------ */}
       <div className="dashboard-main-viewport">
         {/* Top Navigation Bar */}
         <header className="dashboard-topbar">
           <div className="topbar-breadcrumb">
-            <span className="breadcrumb-parent">
+            <span className="breadcrumb-root">
               {isAdmin ? 'Administration' : isEmployee ? 'Branch Operations' : 'Retail Banking'}
             </span>
-            <span className="breadcrumb-divider">/</span>
+            <span className="breadcrumb-separator">/</span>
             <span className="breadcrumb-current">
               {activeNav === 'diagnostics'
                 ? 'System Diagnostics'
-                : isAdmin
-                ? 'Employees'
-                : isEmployee
-                ? 'Staff Overview'
-                : 'Account Overview'}
+                : activeNav === 'accounts'
+                ? 'Account Management'
+                : activeNav === 'employees'
+                ? 'Employee Management'
+                : 'Workspace Overview'}
             </span>
           </div>
 
@@ -719,6 +756,7 @@ export default function App() {
                   </p>
                 </div>
                 <button
+                  type="button"
                   className="btn-secondary-custom"
                   onClick={checkHealth}
                   disabled={healthLoading}
@@ -802,14 +840,20 @@ export default function App() {
                 </table>
               </div>
             </div>
-          ) : isAdmin ? (
+          ) : activeNav === 'accounts' ? (
+            /* ==================================================================
+               ACCOUNT MANAGEMENT CONSOLE (Issue #7)
+               Accessible to Bank Employees (and Admin oversight)
+               ================================================================== */
+            <AccountManagement currentUser={currentUser} />
+          ) : activeNav === 'employees' && isAdmin ? (
             /* ==================================================================
                ADMINISTRATOR: EMPLOYEE MANAGEMENT CONSOLE (Issue #11)
                ================================================================== */
             <EmployeeManagement currentUser={currentUser} />
-          ) : isEmployee ? (
+          ) : isEmployee && activeNav === 'overview' ? (
             /* ==================================================================
-               EMPLOYEE: BRANCH OPERATIONS PORTAL
+               EMPLOYEE: BRANCH OPERATIONS OVERVIEW
                ================================================================== */
             <div className="role-portal-view">
               <div className="portal-banner">
@@ -819,7 +863,7 @@ export default function App() {
                 <div>
                   <h1 className="portal-title">Bank Staff Operations Workspace</h1>
                   <p className="portal-subtitle">
-                    Authorized terminal for <strong>{currentUser.displayName}</strong> &bull; Staff ID #{currentUser.employeeId || '2'}
+                    Authorized terminal for <strong>{currentUser.displayName}</strong> &bull; Staff ID #{currentUser.employeeId || '1'}
                   </p>
                 </div>
               </div>
@@ -860,63 +904,38 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Roadmap Notice Box */}
+              {/* Action Jump to Accounts */}
               <div className="roadmap-notice-box">
                 <div className="roadmap-notice-header">
-                  <IconShield size={18} className="roadmap-shield-icon" />
-                  <h4>Role-Based Access Control Notice (SRS Section 3 &amp; Issue #11)</h4>
+                  <IconLandmark size={20} style={{ color: '#38bdf8' }} />
+                  <h4>Bank Account Creation &amp; Access Management (Issue #7 Ready)</h4>
                 </div>
                 <p>
-                  You are successfully authenticated into the <strong>Bank Staff Terminal</strong>. Under the system's role-based security specification (FR-03, FR-23), <strong>Employee Account and Access Management</strong> is strictly reserved for Administrators.
+                  As an authorized Bank Employee, you have full clearance to open bank accounts for registered customers, inspect account balances, and toggle account operational status (Active, Inactive, Frozen) in accordance with bank policy (FR-07, FR-08, FR-09, FR-10, FR-11).
                 </p>
-                <div className="roadmap-timeline-box">
-                  <span className="timeline-badge">Sprint 2 Scheduled Deliverables</span>
-                  <div className="timeline-items-grid">
-                    <div className="timeline-item">
-                      <span className="item-req">FR-04</span>
-                      <span className="item-title">Register New Customer</span>
-                      <span className="item-status">Sprint 2</span>
-                    </div>
-                    <div className="timeline-item">
-                      <span className="item-req">FR-07, FR-10</span>
-                      <span className="item-title">Create &amp; Manage Accounts</span>
-                      <span className="item-status">Sprint 2</span>
-                    </div>
-                    <div className="timeline-item">
-                      <span className="item-req">FR-12, FR-13</span>
-                      <span className="item-title">Cash Deposits &amp; Withdrawals</span>
-                      <span className="item-status">Sprint 2</span>
-                    </div>
-                    <div className="timeline-item">
-                      <span className="item-req">FR-21</span>
-                      <span className="item-title">Audit Transaction Records</span>
-                      <span className="item-status">Sprint 2</span>
-                    </div>
-                  </div>
-                </div>
                 <div className="roadmap-actions-row">
+                  <button
+                    type="button"
+                    className="btn-primary-custom"
+                    onClick={() => setActiveNav('accounts')}
+                  >
+                    <IconLandmark size={16} />
+                    <span>Open Account Management Dashboard</span>
+                  </button>
                   <button
                     type="button"
                     className="btn-secondary-custom"
                     onClick={() => setActiveNav('diagnostics')}
                   >
                     <IconActivity size={15} />
-                    <span>View System Diagnostics</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary-custom"
-                    onClick={handleLogout}
-                  >
-                    <IconLogOut size={15} />
-                    <span>Sign Out &amp; Switch to Admin</span>
+                    <span>System Diagnostics</span>
                   </button>
                 </div>
               </div>
             </div>
           ) : (
             /* ==================================================================
-               CUSTOMER: RETAIL BANKING PORTAL
+               CUSTOMER: RETAIL BANKING PORTAL (FR-09 Live Account Overview)
                ================================================================== */
             <div className="role-portal-view">
               <div className="portal-banner">
@@ -931,40 +950,75 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Customer Account Snapshot Card */}
-              <div className="emp-stats-grid" style={{ marginBottom: '1.75rem' }}>
-                <div className="emp-stat-card">
-                  <div className="stat-icon-wrapper active-icon">
-                    <IconLandmark size={22} />
+              {/* Verified Accounts Live Ledger Section (FR-09) */}
+              <div className="customer-accounts-section" style={{ marginBottom: '2rem' }}>
+                <div className="emp-page-header" style={{ marginBottom: '1rem' }}>
+                  <div>
+                    <h2 className="emp-page-title" style={{ fontSize: '1.25rem' }}>Your Bank Accounts</h2>
+                    <p className="emp-page-subtitle">
+                      Live account balances and operational status from the core banking ledger (FR-09).
+                    </p>
                   </div>
-                  <div className="stat-details">
-                    <span className="stat-label">Primary Account</span>
-                    <span className="stat-value" style={{ fontSize: '1.25rem', color: '#34d399' }}>ACC-T1</span>
-                    <span className="stat-desc">Savings Account</span>
-                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary-custom"
+                    onClick={loadCustomerAccounts}
+                    disabled={custAccountsLoading}
+                  >
+                    <IconCreditCard size={15} />
+                    <span>{custAccountsLoading ? 'Refreshing...' : 'Refresh Balance'}</span>
+                  </button>
                 </div>
 
-                <div className="emp-stat-card">
-                  <div className="stat-icon-wrapper total-icon">
-                    <IconCreditCard size={22} />
+                {custAccountsLoading ? (
+                  <div className="table-skeleton-container" style={{ padding: '1rem' }}>
+                    <div className="skeleton-row" />
+                    <div className="skeleton-row" />
                   </div>
-                  <div className="stat-details">
-                    <span className="stat-label">Currency</span>
-                    <span className="stat-value" style={{ fontSize: '1.25rem', color: '#f8fafc' }}>INR (₹)</span>
-                    <span className="stat-desc">Exact Decimal (15,2)</span>
+                ) : customerAccounts.length === 0 ? (
+                  <div className="empty-state-box" style={{ padding: '2rem' }}>
+                    <IconCreditCard size={32} className="empty-state-icon" />
+                    <h3>No Bank Accounts Linked</h3>
+                    <p>Please contact branch staff to open a savings or current account for your customer profile.</p>
                   </div>
-                </div>
+                ) : (
+                  <div className="emp-stats-grid">
+                    {customerAccounts.map((acc) => {
+                      const numVal = Number(acc.balance) || 0;
+                      const formatted = new Intl.NumberFormat('en-IN', {
+                        style: 'currency',
+                        currency: 'INR',
+                        minimumFractionDigits: 2
+                      }).format(numVal);
 
-                <div className="emp-stat-card">
-                  <div className="stat-icon-wrapper active-icon">
-                    <IconUserCheck size={22} />
+                      return (
+                        <div key={acc.accountId} className="emp-stat-card" style={{ padding: '1.25rem 1.5rem' }}>
+                          <div className="stat-icon-wrapper active-icon">
+                            <IconLandmark size={22} />
+                          </div>
+                          <div className="stat-details" style={{ width: '100%' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span className="stat-label">{acc.accountType} ACCOUNT</span>
+                              <span className={`status-badge-custom badge-${String(acc.status).toLowerCase()}`} style={{ fontSize: '0.68rem', padding: '0.15rem 0.5rem' }}>
+                                <span className="status-dot" />
+                                <span>{acc.status}</span>
+                              </span>
+                            </div>
+                            <span className="stat-value font-mono" style={{ fontSize: '1.4rem', color: '#60a5fa', margin: '0.35rem 0' }}>
+                              {acc.accountNumber}
+                            </span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '0.25rem' }}>
+                              <span className="stat-desc">Available Balance</span>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: '800', fontSize: '1.25rem', color: '#f8fafc' }}>
+                                {formatted}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="stat-details">
-                    <span className="stat-label">Account Status</span>
-                    <span className="stat-value text-success" style={{ fontSize: '1.25rem' }}>ACTIVE</span>
-                    <span className="stat-desc">Operational for transactions</span>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Customer Roadmap Notice Box */}
@@ -982,7 +1036,7 @@ export default function App() {
                     <div className="timeline-item">
                       <span className="item-req">FR-09</span>
                       <span className="item-title">View Balance &amp; Details</span>
-                      <span className="item-status">Sprint 2</span>
+                      <span className="item-status" style={{ color: '#10b981' }}>Live (Implemented)</span>
                     </div>
                     <div className="timeline-item">
                       <span className="item-req">FR-15, FR-17</span>
@@ -1016,7 +1070,7 @@ export default function App() {
                     onClick={handleLogout}
                   >
                     <IconLogOut size={15} />
-                    <span>Sign Out &amp; Switch to Admin</span>
+                    <span>Sign Out</span>
                   </button>
                 </div>
               </div>
