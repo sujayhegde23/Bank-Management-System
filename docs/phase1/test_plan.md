@@ -531,8 +531,8 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Steps | 1. Log in as `test.employee1` and try to deposit 100.00 into ACC-T3. 2. Try to withdraw 100.00 from ACC-T4. 3. Log in as `test.customer1` and try to transfer 100.00 from ACC-T1 to ACC-T3. 4. Try to transfer 100.00 from ACC-T4 to ACC-T2. 5. Log in as `test.employee1`, unfreeze ACC-T3 (set it to Active), and deposit 100.00 into it. |
 | Test Data / Input | Accounts ACC-T1, ACC-T2, ACC-T3, ACC-T4; Amount: 100.00 |
 | Expected Result | Steps 1–4 are rejected with "Account frozen or inactive" (`ACC_001`), and all balances are unchanged with no transaction records. Step 5: the status changes to Active and the deposit succeeds (ACC-T3 = 2,100.00). |
-| Actual Result | Feature scheduled for Sprint 2 (Account status enforcement & transaction blocking). |
-| Status | Pending Implementation |
+| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/accounts.test.js`, Scenarios 4 & 5). Authorized Bank Employee can toggle status between ACTIVE, INACTIVE, and FROZEN via `PATCH /api/accounts/:id/status` (200 OK) with zero effect on balance. Unauthorized roles (Customer, Admin) are rejected with `AUTH_002` (403). `verifyAccountEligibility` confirms active accounts pass, while frozen/inactive accounts throw `ACC_001` (409). Actual deposit/withdrawal endpoints remain pending Issue #8. |
+| Status | Passed (Status Lifecycle & Eligibility Engine Verified) |
 
 ### TC-09 — Password Security / Password Storage
 
@@ -633,8 +633,8 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Steps | 1. Open **Create Bank Account**. 2. Select customer C1, choose account type Savings and opening balance 0.00. 3. Click **Submit**. 4. Repeat steps 1–3 two more times. 5. Try to create an account for a customer ID that does not exist. |
 | Test Data / Input | Customer: C1; Type: Savings; Opening balance: 0.00; non-existent customer ID `C9999` |
 | Expected Result | Steps 1–4 create three accounts, each Active, with a different account number that is also different from ACC-T1 to ACC-T4. Step 5 is rejected with "Customer not found" (`CUST_001`). |
-| Actual Result | Database constraint verified via schema review REV-03 (`accounts.account_number` has `UNIQUE KEY`). Automated account generation and customer linking service scheduled for Sprint 2. |
-| Status | Pending Implementation (Schema Verified) |
+| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/accounts.test.js`, Scenario 1) and React dashboard (`AccountManagement.jsx`). Authorized Bank Employee creates SAVINGS and CURRENT accounts for registered customer C1 via `POST /api/accounts` (201 Created), receiving unique identifiers formatted `ACC-<TYPE>-<8-DIGITS>`. Enforces 0.00 opening balance, rejects non-existent customers with `CUST_001` (404), and blocks unauthorized roles with `AUTH_002` (403). |
+| Status | Passed |
 
 ### TC-15 — Successful Withdrawal
 
@@ -667,8 +667,8 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Steps | 1. Open **View Account Details**. 2. Open **Transaction History** for ACC-T1. 3. Change the account ID in the URL or API request to ACC-T2 (owned by C2) and request its details. 4. Request the transaction history of ACC-T2 in the same way. |
 | Test Data / Input | Own account: ACC-T1; other customer's account: ACC-T2 |
 | Expected Result | Step 1 shows only ACC-T1 and ACC-T4 with correct numbers, status and balances. Step 2 shows ACC-T1's transactions, newest first. Steps 3–4 are denied with `AUTH_002`, and none of ACC-T2's data is returned. |
-| Actual Result | Feature scheduled for Sprint 2 (Account & Transaction customer history endpoints and ownership authorization). |
-| Status | Pending Implementation |
+| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/accounts.test.js`, Scenarios 2 & 3) and browser verification. Customer `test.customer1` querying `/api/accounts` retrieves strictly their own accounts (ACC-T1, ACC-T4); querying another customer's account or account ID returns HTTP 403 `AUTH_002`. Employees and Admins retrieve all accounts with full customer information. |
+| Status | Passed (Account Balance and Details Retrieval Verified) |
 
 ### TC-17 — Change Password
 
