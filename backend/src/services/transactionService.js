@@ -1,0 +1,490 @@
+/**
+ * ==============================================================================
+ * Transaction Domain Service (Issue #8)
+ * ==============================================================================
+ * Implements core banking business logic and ACID guarantees for financial transactions:
+ * - FR-11: Prevent transactions on inactive or frozen accounts.
+ * - FR-12: Cash/fund deposit into active bank accounts.
+ * - FR-13: Cash/fund withdrawal from active bank accounts.
+ * - FR-14: Insufficient balance rejection (overdraft protection).
+ * - FR-18: Unique cryptographic transaction reference allocation (NFR-16).
+ * - FR-19: Insert-only audit ledger recording in `bank_transactions` (NFR-10).
+ * - NFR-04, NFR-18: Strict monetary input validation with exact DECIMAL handling.
+ * - NFR-08, NFR-09, NFR-17: Atomic balance updates with row-level locking (SELECT ... FOR UPDATE).
+ * ==============================================================================
+ */
+
+const crypto = require('crypto');
+const { query, withTransaction } = require('../config/db');
+
+// Type prefixes for human-readable transaction references
+const TRANSACTION_TYPE_PREFIXES = {
+  DEPOSIT: 'DEP',
+  WITHDRAWAL: 'WTH',
+  TRANSFER: 'TRF'
+};
+
+/**
+ * Validates a monetary transaction amount according to strict banking rules.
+ * - Must be present and non-empty.
+ * - Must be a positive number greater than zero.
+ * - Must have at most 2 decimal places (cents/paise).
+ * - Must not exceed maximum allowed transaction limit (999,999,999.99).
+ * - Formats to fixed 2-decimal string for exact DECIMAL SQL binding without float rounding errors.
+ *
+ * @param {any} amount - Input amount to validate
+ * @returns {string} Normalized 2-decimal string (e.g. "2500.00")
+ * @throws {Error} Throws TXN_002 (400) if invalid
+ */
+function validateMonetaryAmount(amount) {
+  if (amount === undefined || amount === null || amount === '') {
+    const error = new Error('Amount is required');
+    error.statusCode = 400;
+    error.code = 'TXN_002';
+    error.safeMessage = 'Invalid amount';
+    throw error;
+  }
+
+  const str = String(amount).trim();
+
+  // Pattern: positive integer or decimal with 1-2 decimal places, no trailing garbage
+  const validPattern = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
+  if (!validPattern.test(str)) {
+    const error = new Error('Amount must be a positive number with at most 2 decimal places');
+    error.statusCode = 400;
+    error.code = 'TXN_002';
+    error.safeMessage = 'Invalid amount';
+    throw error;
+  }
+
+  const num = Number(str);
+  if (isNaN(num) || !isFinite(num) || num <= 0) {
+    const error = new Error('Amount must be greater than zero');
+    error.statusCode = 400;
+    error.code = 'TXN_002';
+    error.safeMessage = 'Invalid amount';
+    throw error;
+  }
+
+  // Maximum single transaction limit: ₹999,999,999.99
+  if (num > 999999999.99) {
+    const error = new Error('Amount exceeds maximum transaction limit of 999,999,999.99');
+    error.statusCode = 400;
+    error.code = 'TXN_002';
+    error.safeMessage = 'Invalid amount';
+    throw error;
+  }
+
+  return num.toFixed(2);
+}
+
+/**
+ * Generates a unique, cryptographically secure transaction reference (FR-18, NFR-16).
+ * Format: TXN-<TYPE_PREFIX>-<HEX_STRING>, e.g. TXN-DEP-A4B7C91E5D8F
+ * Verifies uniqueness in bank_transactions with bounded collision retry loop.
+ *
+ * @param {'DEPOSIT'|'WITHDRAWAL'|'TRANSFER'} type - Transaction category
+ * @param {import('mysql2/promise').Connection} [dbConn] - Optional active transaction connection
+ * @param {number} [maxAttempts=5] - Maximum collision retry attempts
+ * @returns {Promise<string>} Unique transaction reference
+ */
+async function generateUniqueTransactionRef(type = 'DEPOSIT', dbConn = null, maxAttempts = 5) {
+  const typeKey = (type || 'DEPOSIT').toUpperCase();
+  const typePrefix = TRANSACTION_TYPE_PREFIXES[typeKey] || 'TXN';
+  const queryExecutor = dbConn ? (sql, params) => dbConn.execute(sql, params).then(([r]) => r) : query;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Generate 6 random bytes (12 uppercase hex characters)
+    const randomHex = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const candidateRef = `TXN-${typePrefix}-${randomHex}`;
+
+    const existing = await queryExecutor(
+      'SELECT transaction_id FROM bank_transactions WHERE transaction_ref = ? LIMIT 1',
+      [candidateRef]
+    );
+
+    if (!existing || existing.length === 0) {
+      return candidateRef;
+    }
+  }
+
+  const error = new Error('Failed to generate a unique transaction reference. Please retry.');
+  error.statusCode = 500;
+  error.code = 'SYS_001';
+  throw error;
+}
+
+/**
+ * Execute an atomic cash/fund deposit into a bank account (FR-12, AC-1).
+ *
+ * Transaction flow:
+ * 1. Acquire exclusive row lock on the target account: `SELECT ... FOR UPDATE`.
+ * 2. Verify account exists (`ACC_002` if not found).
+ * 3. Verify account status is 'ACTIVE' (`ACC_001` if FROZEN or INACTIVE per FR-11).
+ * 4. Validate monetary amount (`TXN_002`).
+ * 5. Update account balance using exact SQL DECIMAL addition: `balance = balance + ?`.
+ * 6. Generate collision-free `transaction_ref` (`TXN-DEP-...`).
+ * 7. Insert audit ledger record into `bank_transactions` (FR-19, NFR-10).
+ * 8. Commit transaction and return updated state.
+ *
+ * Concurrency & Rollback:
+ * If any error occurs or a failure point triggers, MySQL transaction automatically rolls back,
+ * leaving balances and ledger records unaltered (NFR-08, NFR-09, NFR-17).
+ *
+ * @param {object} params
+ * @param {number} params.accountId - Internal ID of target account
+ * @param {number|string} params.amount - Deposit amount
+ * @param {string} [params.remarks] - Optional audit note
+ * @param {number} params.performedByUserId - User ID of executing employee
+ * @param {string} [params._testFailurePoint] - Test hook to simulate mid-transaction failure for TC-10
+ * @returns {Promise<object>} Created transaction and updated account balance
+ */
+async function executeDeposit({ accountId, amount, remarks = null, performedByUserId, _testFailurePoint = null }) {
+  // Pre-validate amount before opening database transaction to minimize lock hold duration (NFR-07)
+  const normalizedAmount = validateMonetaryAmount(amount);
+
+  return await withTransaction(async (conn) => {
+    // 1. Lock account row with SELECT ... FOR UPDATE (prevents concurrent status/balance races)
+    const [rows] = await conn.execute(
+      `SELECT account_id, account_number, customer_id, account_type, balance, status
+       FROM accounts
+       WHERE account_id = ?
+       FOR UPDATE`,
+      [accountId]
+    );
+
+    if (!rows || rows.length === 0) {
+      const error = new Error('Account not found');
+      error.statusCode = 404;
+      error.code = 'ACC_002';
+      error.safeMessage = 'Account not found';
+      throw error;
+    }
+
+    const account = rows[0];
+
+    // 2. Account status check under lock (FR-11)
+    if (account.status !== 'ACTIVE') {
+      const error = new Error('Account is frozen or inactive');
+      error.statusCode = 409;
+      error.code = 'ACC_001';
+      error.safeMessage = 'Account is frozen or inactive';
+      error.accountStatus = account.status;
+      throw error;
+    }
+
+    // 3. Update account balance in MySQL
+    await conn.execute(
+      'UPDATE accounts SET balance = balance + ? WHERE account_id = ?',
+      [normalizedAmount, accountId]
+    );
+
+    // Optional test hook for TC-10: Force failure after balance update but before ledger insert
+    if (_testFailurePoint === 'AFTER_BALANCE_UPDATE') {
+      const simError = new Error('Simulated database error after balance update (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 4. Generate unique transaction identifier
+    const transactionRef = await generateUniqueTransactionRef('DEPOSIT', conn);
+
+    // Optional test hook for TC-10: Force failure immediately before ledger insertion
+    if (_testFailurePoint === 'BEFORE_LEDGER_INSERT') {
+      const simError = new Error('Simulated database failure before ledger insert (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 5. Insert unmodifiable transaction ledger entry (NFR-10, FR-18, FR-19)
+    // For DEPOSIT: source_account_id is NULL, destination_account_id is accountId
+    const safeRemarks = remarks ? String(remarks).trim().substring(0, 255) : 'Cash deposit at branch';
+    const [insertResult] = await conn.execute(
+      `INSERT INTO bank_transactions
+        (transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks)
+       VALUES (?, 'DEPOSIT', ?, NULL, ?, ?, ?)`,
+      [transactionRef, normalizedAmount, accountId, performedByUserId, safeRemarks]
+    );
+
+    // Optional test hook: Force failure after ledger insert
+    if (_testFailurePoint === 'AFTER_LEDGER_INSERT') {
+      const simError = new Error('Simulated failure after ledger insert (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 6. Retrieve committed balance from database
+    const [balanceRows] = await conn.execute(
+      'SELECT balance FROM accounts WHERE account_id = ?',
+      [accountId]
+    );
+    const balanceAfter = balanceRows && balanceRows.length > 0 ? Number(balanceRows[0].balance) : Number(account.balance) + Number(normalizedAmount);
+
+    return {
+      transactionId: insertResult.insertId,
+      transactionRef,
+      type: 'DEPOSIT',
+      accountId: account.account_id,
+      accountNumber: account.account_number,
+      amount: Number(normalizedAmount),
+      balanceAfter,
+      timestamp: new Date().toISOString()
+    };
+  });
+}
+
+/**
+ * Execute an atomic cash/fund withdrawal from a bank account (FR-13, AC-2).
+ *
+ * Transaction flow:
+ * 1. Acquire exclusive row lock on the source account: `SELECT ... FOR UPDATE`.
+ * 2. Verify account exists (`ACC_002` if not found).
+ * 3. Verify account status is 'ACTIVE' (`ACC_001` if FROZEN or INACTIVE per FR-11).
+ * 4. Validate monetary amount (`TXN_002`).
+ * 5. Check sufficient available balance (`TXN_001` 422 if amount > balance per FR-14).
+ * 6. Update account balance with conditional guard: `balance = balance - ? WHERE account_id = ? AND balance >= ?`.
+ * 7. Generate collision-free `transaction_ref` (`TXN-WTH-...`).
+ * 8. Insert audit ledger record into `bank_transactions` (FR-19, NFR-10).
+ * 9. Commit transaction and return updated state.
+ *
+ * Concurrency & Rollback:
+ * If two concurrent withdrawals target the same account, the first takes the X-lock.
+ * The second waits on the lock, reads the updated balance, and is rejected if remaining funds
+ * are insufficient. If any step fails, entire transaction rolls back cleanly (NFR-08, NFR-09, NFR-17).
+ *
+ * @param {object} params
+ * @param {number} params.accountId - Internal ID of source account
+ * @param {number|string} params.amount - Withdrawal amount
+ * @param {string} [params.remarks] - Optional audit note
+ * @param {number} params.performedByUserId - User ID of executing employee
+ * @param {string} [params._testFailurePoint] - Test hook to simulate mid-transaction failure for TC-10
+ * @returns {Promise<object>} Created transaction and updated account balance
+ */
+async function executeWithdrawal({ accountId, amount, remarks = null, performedByUserId, _testFailurePoint = null }) {
+  // Pre-validate amount before opening database transaction
+  const normalizedAmount = validateMonetaryAmount(amount);
+
+  return await withTransaction(async (conn) => {
+    // 1. Lock account row with SELECT ... FOR UPDATE
+    const [rows] = await conn.execute(
+      `SELECT account_id, account_number, customer_id, account_type, balance, status
+       FROM accounts
+       WHERE account_id = ?
+       FOR UPDATE`,
+      [accountId]
+    );
+
+    if (!rows || rows.length === 0) {
+      const error = new Error('Account not found');
+      error.statusCode = 404;
+      error.code = 'ACC_002';
+      error.safeMessage = 'Account not found';
+      throw error;
+    }
+
+    const account = rows[0];
+
+    // 2. Account status check under lock (FR-11)
+    if (account.status !== 'ACTIVE') {
+      const error = new Error('Account is frozen or inactive');
+      error.statusCode = 409;
+      error.code = 'ACC_001';
+      error.safeMessage = 'Account is frozen or inactive';
+      error.accountStatus = account.status;
+      throw error;
+    }
+
+    // 3. Insufficient balance check (FR-14, TC-06, AC-4)
+    const currentBalanceNum = Number(account.balance);
+    const withdrawalAmountNum = Number(normalizedAmount);
+
+    if (currentBalanceNum < withdrawalAmountNum) {
+      const error = new Error('Insufficient balance');
+      error.statusCode = 422;
+      error.code = 'TXN_001';
+      error.safeMessage = 'Insufficient balance';
+      error.currentBalance = currentBalanceNum;
+      error.requestedAmount = withdrawalAmountNum;
+      throw error;
+    }
+
+    // 4. Update account balance with conditional overdraft guard
+    const [updateResult] = await conn.execute(
+      'UPDATE accounts SET balance = balance - ? WHERE account_id = ? AND balance >= ?',
+      [normalizedAmount, accountId, normalizedAmount]
+    );
+
+    if (updateResult.affectedRows !== 1) {
+      const error = new Error('Insufficient balance');
+      error.statusCode = 422;
+      error.code = 'TXN_001';
+      error.safeMessage = 'Insufficient balance';
+      throw error;
+    }
+
+    // Optional test hook for TC-10: Force failure after balance update
+    if (_testFailurePoint === 'AFTER_BALANCE_UPDATE') {
+      const simError = new Error('Simulated database error after balance update (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 5. Generate unique transaction identifier
+    const transactionRef = await generateUniqueTransactionRef('WITHDRAWAL', conn);
+
+    // Optional test hook for TC-10: Force failure immediately before ledger insert
+    if (_testFailurePoint === 'BEFORE_LEDGER_INSERT') {
+      const simError = new Error('Simulated database failure before ledger insert (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 6. Insert unmodifiable transaction ledger entry (NFR-10, FR-18, FR-19)
+    // For WITHDRAWAL: source_account_id is accountId, destination_account_id is NULL
+    const safeRemarks = remarks ? String(remarks).trim().substring(0, 255) : 'Cash withdrawal at branch';
+    const [insertResult] = await conn.execute(
+      `INSERT INTO bank_transactions
+        (transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks)
+       VALUES (?, 'WITHDRAWAL', ?, ?, NULL, ?, ?)`,
+      [transactionRef, normalizedAmount, accountId, performedByUserId, safeRemarks]
+    );
+
+    // Optional test hook: Force failure after ledger insert
+    if (_testFailurePoint === 'AFTER_LEDGER_INSERT') {
+      const simError = new Error('Simulated failure after ledger insert (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 7. Retrieve committed balance from database
+    const [balanceRows] = await conn.execute(
+      'SELECT balance FROM accounts WHERE account_id = ?',
+      [accountId]
+    );
+    const balanceAfter = balanceRows && balanceRows.length > 0 ? Number(balanceRows[0].balance) : currentBalanceNum - withdrawalAmountNum;
+
+    return {
+      transactionId: insertResult.insertId,
+      transactionRef,
+      type: 'WITHDRAWAL',
+      accountId: account.account_id,
+      accountNumber: account.account_number,
+      amount: Number(normalizedAmount),
+      balanceAfter,
+      timestamp: new Date().toISOString()
+    };
+  });
+}
+
+/**
+ * Retrieve transaction history for an account with authorization and isolation rules (FR-20, FR-21).
+ *
+ * Authorization:
+ * - Bank Employee and Admin can view transaction history for any account (FR-21).
+ * - Customer can view transaction history ONLY for accounts they own (FR-20, NFR-03, TC-16).
+ *
+ * @param {object} params
+ * @param {number} params.accountId - Internal account ID
+ * @param {object} params.user - Authenticated user context (req.user)
+ * @param {number} [params.page=1] - Page number (1-based)
+ * @param {number} [params.size=20] - Page size
+ * @returns {Promise<object>} Paginated transaction records
+ */
+async function getAccountTransactions({ accountId, user, page = 1, size = 20 }) {
+  // 1. Verify account exists and retrieve ownership
+  const accountRows = await query(
+    'SELECT account_id, account_number, customer_id FROM accounts WHERE account_id = ? LIMIT 1',
+    [accountId]
+  );
+
+  if (!accountRows || accountRows.length === 0) {
+    const error = new Error('Account not found');
+    error.statusCode = 404;
+    error.code = 'ACC_002';
+    error.safeMessage = 'Account not found';
+    throw error;
+  }
+
+  const account = accountRows[0];
+
+  // 2. Customer data isolation check (NFR-03, TC-16)
+  if (user.role === 'CUSTOMER' && Number(user.customerId) !== Number(account.customer_id)) {
+    const error = new Error('You are not authorized to view transactions for this account');
+    error.statusCode = 403;
+    error.code = 'AUTH_002';
+    error.safeMessage = 'You are not authorized to perform this operation';
+    throw error;
+  }
+
+  // 3. Pagination sanitization
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(size, 10) || 20));
+  const offset = (pageNum - 1) * pageSize;
+
+  // 4. Count total transactions
+  const countRows = await query(
+    `SELECT COUNT(*) AS total
+     FROM bank_transactions
+     WHERE source_account_id = ? OR destination_account_id = ?`,
+    [accountId, accountId]
+  );
+  const total = countRows[0]?.total || 0;
+
+  // 5. Query transactions newest first (FR-20)
+  const rows = await query(
+    `SELECT
+       t.transaction_id AS transactionId,
+       t.transaction_ref AS transactionRef,
+       t.type,
+       t.amount,
+       t.source_account_id AS sourceAccountId,
+       t.destination_account_id AS destinationAccountId,
+       t.performed_by_user_id AS performedByUserId,
+       t.remarks,
+       t.created_at AS timestamp,
+       CASE
+         WHEN t.destination_account_id = ? THEN 'CREDIT'
+         WHEN t.source_account_id = ? THEN 'DEBIT'
+         ELSE 'UNKNOWN'
+       END AS direction
+     FROM bank_transactions t
+     WHERE t.source_account_id = ? OR t.destination_account_id = ?
+     ORDER BY t.created_at DESC, t.transaction_id DESC
+     LIMIT ? OFFSET ?`,
+    [accountId, accountId, accountId, accountId, pageSize, offset]
+  );
+
+  return {
+    accountId: account.account_id,
+    accountNumber: account.account_number,
+    transactions: rows.map((r) => ({
+      ...r,
+      amount: Number(r.amount)
+    })),
+    page: pageNum,
+    pageSize,
+    total,
+    totalPages: Math.ceil(total / pageSize) || 1
+  };
+}
+
+module.exports = {
+  validateMonetaryAmount,
+  generateUniqueTransactionRef,
+  executeDeposit,
+  executeWithdrawal,
+  getAccountTransactions,
+  TRANSACTION_TYPE_PREFIXES
+};

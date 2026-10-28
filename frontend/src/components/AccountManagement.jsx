@@ -4,7 +4,10 @@ import {
   getAccount,
   createAccount,
   updateAccountStatus,
-  getCustomers
+  getCustomers,
+  depositFunds,
+  withdrawFunds,
+  getAccountTransactions
 } from '../services/api';
 import './AccountManagement.css';
 
@@ -123,6 +126,37 @@ function IconX({ size = 18, className = '' }) {
   );
 }
 
+
+function IconArrowDownCircle({ size = 15, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="8 12 12 16 16 12" />
+      <line x1="12" y1="8" x2="12" y2="16" />
+    </svg>
+  );
+}
+
+function IconArrowUpCircle({ size = 15, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="16 12 12 8 8 12" />
+      <line x1="12" y1="16" x2="12" y2="8" />
+    </svg>
+  );
+}
+
+function IconHistory({ size = 15, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
+    </svg>
+  );
+}
+
 function IconAlertCircle({ size = 18, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -149,7 +183,7 @@ function formatINR(amount) {
 /* ==============================================================================
    Main Component: AccountManagement
    ============================================================================== */
-export default function AccountManagement({ currentUser }) {
+export default function AccountManagement({ currentUser, initialAction = null, onActionConsumed }) {
   const isEmployee = currentUser?.role === 'EMPLOYEE';
   const isAdmin = currentUser?.role === 'ADMIN';
 
@@ -183,6 +217,11 @@ export default function AccountManagement({ currentUser }) {
   // Status Change Dialog
   const [statusDialog, setStatusDialog] = useState(null);
 
+  // Transaction Modals (Issue #8)
+  const [depositDialog, setDepositDialog] = useState(null);
+  const [withdrawDialog, setWithdrawDialog] = useState(null);
+  const [accountTransactions, setAccountTransactions] = useState([]);
+
   // References
   const isMountedRef = useRef(true);
   const activeRequestIdRef = useRef(0);
@@ -198,6 +237,45 @@ export default function AccountManagement({ currentUser }) {
     }, 5000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  const handleOpenDeposit = useCallback((account = null) => {
+    const target = account || accounts.find((a) => a.status === 'ACTIVE') || accounts[0] || null;
+    setDepositDialog({
+      account: target,
+      amount: '',
+      remarks: '',
+      error: null,
+      isSubmitting: false
+    });
+  }, [accounts]);
+
+  const handleOpenWithdraw = useCallback((account = null) => {
+    const target = account || accounts.find((a) => a.status === 'ACTIVE') || accounts[0] || null;
+    setWithdrawDialog({
+      account: target,
+      amount: '',
+      remarks: '',
+      error: null,
+      isSubmitting: false
+    });
+  }, [accounts]);
+
+  // Handle direct navigation to deposit/withdraw from sidebar
+  useEffect(() => {
+    if (!isEmployee || !initialAction || accounts.length === 0) return;
+
+    const timer = setTimeout(() => {
+      const active = accounts.find((a) => a.status === 'ACTIVE') || accounts[0];
+      if (initialAction === 'deposit') {
+        handleOpenDeposit(active);
+      } else if (initialAction === 'withdraw') {
+        handleOpenWithdraw(active);
+      }
+      if (onActionConsumed) onActionConsumed();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isEmployee, initialAction, accounts, onActionConsumed, handleOpenDeposit, handleOpenWithdraw]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -263,14 +341,16 @@ export default function AccountManagement({ currentUser }) {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
-        if (statusDialog) setStatusDialog(null);
+        if (depositDialog && !depositDialog.isSubmitting) setDepositDialog(null);
+        else if (withdrawDialog && !withdrawDialog.isSubmitting) setWithdrawDialog(null);
+        else if (statusDialog) setStatusDialog(null);
         else if (viewingAccount) setViewingAccount(null);
         else if (showCreateModal) setShowCreateModal(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [statusDialog, viewingAccount, showCreateModal]);
+  }, [depositDialog, withdrawDialog, statusDialog, viewingAccount, showCreateModal]);
 
   /**
    * Dynamically calculated summary cards from real accounts
@@ -326,10 +406,17 @@ export default function AccountManagement({ currentUser }) {
   const handleOpenDetails = async (accountId) => {
     setViewLoading(true);
     setViewingAccount({ accountId }); // placeholder with ID while fetching
+    setAccountTransactions([]);
     try {
-      const fresh = await getAccount(accountId);
+      const [fresh, txnsData] = await Promise.all([
+        getAccount(accountId),
+        getAccountTransactions(accountId, { page: 1, size: 10 }).catch(() => null)
+      ]);
       if (isMountedRef.current) {
         setViewingAccount(fresh);
+        if (txnsData?.transactions) {
+          setAccountTransactions(txnsData.transactions);
+        }
       }
     } catch (err) {
       console.error('Error fetching account details:', err);
@@ -342,6 +429,92 @@ export default function AccountManagement({ currentUser }) {
       if (isMountedRef.current) {
         setViewLoading(false);
       }
+    }
+  };
+
+
+
+  /**
+   * Execute Cash Deposit (FR-12, FR-18, FR-19, TC-05)
+   */
+  const handleExecuteDeposit = async (e) => {
+    e.preventDefault();
+    if (!depositDialog?.account?.accountId) {
+      setDepositDialog((prev) => ({ ...prev, error: 'Please select an eligible active account.' }));
+      return;
+    }
+    const amtStr = String(depositDialog.amount).trim();
+    if (!amtStr || !/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(amtStr) || Number(amtStr) <= 0) {
+      setDepositDialog((prev) => ({ ...prev, error: 'Please enter a valid positive monetary amount (e.g. 500.00).' }));
+      return;
+    }
+
+    setDepositDialog((prev) => ({ ...prev, isSubmitting: true, error: null }));
+    try {
+      const res = await depositFunds(depositDialog.account.accountId, amtStr, depositDialog.remarks);
+      setToast({
+        type: 'success',
+        message: `Deposit of ${formatINR(amtStr)} completed! Ref: ${res.transactionReference || res.transaction_reference || 'COMPLETED'}. New balance: ${formatINR(res.newBalance || res.new_balance)}`
+      });
+      setDepositDialog(null);
+      await fetchAccounts(true);
+      if (viewingAccount?.accountId === depositDialog.account.accountId) {
+        handleOpenDetails(depositDialog.account.accountId);
+      }
+    } catch (err) {
+      console.error('Deposit execution error:', err);
+      setDepositDialog((prev) => ({
+        ...prev,
+        isSubmitting: false,
+        error: err.message || 'Deposit failed. Please check the amount and try again.'
+      }));
+    }
+  };
+
+
+
+  /**
+   * Execute Cash Withdrawal (FR-13, FR-14, FR-18, FR-19, TC-06, TC-15)
+   */
+  const handleExecuteWithdraw = async (e) => {
+    e.preventDefault();
+    if (!withdrawDialog?.account?.accountId) {
+      setWithdrawDialog((prev) => ({ ...prev, error: 'Please select an eligible active account.' }));
+      return;
+    }
+    const amtStr = String(withdrawDialog.amount).trim();
+    if (!amtStr || !/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(amtStr) || Number(amtStr) <= 0) {
+      setWithdrawDialog((prev) => ({ ...prev, error: 'Please enter a valid positive monetary amount (e.g. 500.00).' }));
+      return;
+    }
+    const currentBal = Number(withdrawDialog.account.balance) || 0;
+    if (Number(amtStr) > currentBal) {
+      setWithdrawDialog((prev) => ({
+        ...prev,
+        error: `Insufficient balance. Maximum available for withdrawal is ${formatINR(currentBal)} (FR-14).`
+      }));
+      return;
+    }
+
+    setWithdrawDialog((prev) => ({ ...prev, isSubmitting: true, error: null }));
+    try {
+      const res = await withdrawFunds(withdrawDialog.account.accountId, amtStr, withdrawDialog.remarks);
+      setToast({
+        type: 'success',
+        message: `Withdrawal of ${formatINR(amtStr)} completed! Ref: ${res.transactionReference || res.transaction_reference || 'COMPLETED'}. Remaining balance: ${formatINR(res.newBalance || res.new_balance)}`
+      });
+      setWithdrawDialog(null);
+      await fetchAccounts(true);
+      if (viewingAccount?.accountId === withdrawDialog.account.accountId) {
+        handleOpenDetails(withdrawDialog.account.accountId);
+      }
+    } catch (err) {
+      console.error('Withdrawal execution error:', err);
+      setWithdrawDialog((prev) => ({
+        ...prev,
+        isSubmitting: false,
+        error: err.message || 'Withdrawal failed. Please check the amount and try again.'
+      }));
     }
   };
 
@@ -443,6 +616,21 @@ export default function AccountManagement({ currentUser }) {
     }
   };
 
+  // Role-Based Clearance Guard (FR-03, AUTH_002)
+  if (!isEmployee && !isAdmin) {
+    return (
+      <div className="account-mgmt-container">
+        <div className="empty-state-box" style={{ padding: '3.5rem 1.5rem', textAlign: 'center' }}>
+          <IconShieldAlert size={44} className="text-warning" style={{ marginBottom: '1rem' }} />
+          <h3 style={{ color: '#f8fafc', fontSize: '1.25rem', marginBottom: '0.5rem' }}>Access Restricted (FR-03)</h3>
+          <p style={{ color: '#94a3b8', maxWidth: '460px', margin: '0 auto', lineHeight: 1.5 }}>
+            Branch Account Administration and Counter Cash Operations are strictly restricted to authorized bank employees. Customers cannot perform counter cash operations.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="account-mgmt-container">
       {/* Toast Notification Container */}
@@ -483,18 +671,40 @@ export default function AccountManagement({ currentUser }) {
             <span>Refresh</span>
           </button>
           {isEmployee && (
-            <button
-              id="create-account-btn"
-              type="button"
-              className="btn-primary-custom"
-              onClick={() => {
-                fetchCustomerDirectory();
-                setShowCreateModal(true);
-              }}
-            >
-              <IconPlus size={16} />
-              <span>+ Create Account</span>
-            </button>
+            <>
+              <button
+                id="quick-deposit-btn"
+                type="button"
+                className="btn-action-deposit header-btn-deposit"
+                onClick={() => handleOpenDeposit()}
+                title="Quick cash deposit into an active account (FR-12)"
+              >
+                <IconArrowDownCircle size={15} />
+                <span>Deposit Cash</span>
+              </button>
+              <button
+                id="quick-withdraw-btn"
+                type="button"
+                className="btn-action-withdraw header-btn-withdraw"
+                onClick={() => handleOpenWithdraw()}
+                title="Quick cash withdrawal from an active account (FR-13)"
+              >
+                <IconArrowUpCircle size={15} />
+                <span>Withdraw Cash</span>
+              </button>
+              <button
+                id="create-account-btn"
+                type="button"
+                className="btn-primary-custom"
+                onClick={() => {
+                  fetchCustomerDirectory();
+                  setShowCreateModal(true);
+                }}
+              >
+                <IconPlus size={16} />
+                <span>Create Account</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -753,6 +963,24 @@ export default function AccountManagement({ currentUser }) {
                             <div className="status-action-dropdown">
                               {isAccActive && (
                                 <>
+                                  <button
+                                    type="button"
+                                    className="btn-action-deposit"
+                                    onClick={() => handleOpenDeposit(acc)}
+                                    title="Deposit cash into account (FR-12)"
+                                  >
+                                    <IconArrowDownCircle size={13} />
+                                    <span>Deposit</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-action-withdraw"
+                                    onClick={() => handleOpenWithdraw(acc)}
+                                    title="Withdraw cash from account (FR-13)"
+                                  >
+                                    <IconArrowUpCircle size={13} />
+                                    <span>Withdraw</span>
+                                  </button>
                                   <button
                                     type="button"
                                     className="btn-action-warn"
@@ -1046,6 +1274,112 @@ export default function AccountManagement({ currentUser }) {
                   </div>
                 </div>
 
+
+                {/* Cash & Counter Operations for Staff (Issue #8) */}
+                {isEmployee && (
+                  <div className="modal-status-actions-box">
+                    <span className="box-title">Counter Operations (Deposit / Withdrawal)</span>
+                    <div className="actions-button-group">
+                      <button
+                        type="button"
+                        className="btn-action-deposit"
+                        disabled={viewingAccount.status !== 'ACTIVE'}
+                        onClick={() => setDepositDialog({
+                          account: viewingAccount,
+                          amount: '',
+                          remarks: '',
+                          error: null
+                        })}
+                        title={viewingAccount.status === 'ACTIVE' ? 'Deposit funds into this account' : 'Deposits blocked for non-active account (FR-11)'}
+                      >
+                        <IconArrowDownCircle size={14} />
+                        <span>Deposit Cash</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn-action-withdraw"
+                        disabled={viewingAccount.status !== 'ACTIVE'}
+                        onClick={() => setWithdrawDialog({
+                          account: viewingAccount,
+                          amount: '',
+                          remarks: '',
+                          error: null
+                        })}
+                        title={viewingAccount.status === 'ACTIVE' ? 'Withdraw funds from this account' : 'Withdrawals blocked for non-active account (FR-11)'}
+                      >
+                        <IconArrowUpCircle size={14} />
+                        <span>Withdraw Cash</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Account Transaction Ledger (FR-20, FR-21) */}
+                <div className="view-modal-ledger-section">
+                  <div className="ledger-header-row">
+                    <div className="ledger-title-group">
+                      <IconHistory size={16} className="text-info" />
+                      <span className="box-title" style={{ margin: 0 }}>Recent Account Ledger</span>
+                    </div>
+                    <span className="ledger-count-tag">{accountTransactions.length} records</span>
+                  </div>
+
+                  {accountTransactions.length === 0 ? (
+                    <div className="empty-ledger-box">
+                      <span>No recorded transactions for this account yet.</span>
+                    </div>
+                  ) : (
+                    <div className="table-responsive-wrapper mini-ledger-table-wrap">
+                      <table className="emp-table-custom mini-ledger-table">
+                        <thead>
+                          <tr>
+                            <th>Type</th>
+                            <th>Reference</th>
+                            <th>Amount</th>
+                            <th>Date &amp; Time</th>
+                            <th>Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {accountTransactions.map((tx) => (
+                            <tr key={tx.transactionId || tx.transactionRef}>
+                              <td>
+                                <span className={`txn-type-badge type-${tx.type?.toLowerCase()}`}>
+                                  {tx.type}
+                                </span>
+                              </td>
+                              <td>
+                                <span className="font-mono text-muted" style={{ fontSize: '0.75rem' }}>
+                                  {tx.transactionRef}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`txn-amt-text ${tx.direction === 'CREDIT' || tx.type === 'DEPOSIT' ? 'text-credit' : 'text-debit'}`}>
+                                  {tx.direction === 'CREDIT' || tx.type === 'DEPOSIT' ? '+' : '-'} {formatINR(tx.amount)}
+                                </span>
+                              </td>
+                              <td>
+                                <span className="date-text" style={{ fontSize: '0.75rem' }}>
+                                  {new Date(tx.timestamp).toLocaleString('en-IN', {
+                                    dateStyle: 'short',
+                                    timeStyle: 'short'
+                                  })}
+                                </span>
+                              </td>
+                              <td>
+                                <span className="remarks-text" style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                  {tx.remarks || '—'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
                 {/* Quick Status Modifiers for Staff */}
                 {isEmployee && (
                   <div className="modal-status-actions-box">
@@ -1223,6 +1557,424 @@ export default function AccountManagement({ currentUser }) {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {/* ========================================================================
+          DEPOSIT CASH MODAL (FR-12, FR-18, FR-19, TC-05)
+          ======================================================================== */}
+      {depositDialog && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="deposit-dialog-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !depositDialog.isSubmitting) {
+              setDepositDialog(null);
+            }
+          }}
+        >
+          <div className="modal-card txn-modal-card">
+            <div className="modal-header">
+              <div className="modal-title-box">
+                <IconArrowDownCircle size={22} className="modal-header-icon text-success" />
+                <h3 id="deposit-dialog-title">Counter Cash Deposit</h3>
+              </div>
+              <button
+                type="button"
+                className="modal-close-icon-btn"
+                onClick={() => setDepositDialog(null)}
+                disabled={depositDialog.isSubmitting}
+                aria-label="Close dialog"
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteDeposit}>
+              <div className="txn-modal-body">
+                {/* Account Selector / Information */}
+                <div className="txn-form-group">
+                  <label htmlFor="deposit-account-select" className="txn-form-label">
+                    <span>Destination Account</span>
+                    <span className="text-danger">*</span>
+                  </label>
+                  {accounts.filter((a) => a.status === 'ACTIVE').length > 1 ? (
+                    <select
+                      id="deposit-account-select"
+                      className="txn-select-input"
+                      value={depositDialog.account?.accountId || ''}
+                      onChange={(e) => {
+                        const sel = accounts.find((a) => String(a.accountId) === e.target.value);
+                        setDepositDialog((prev) => ({
+                          ...prev,
+                          account: sel || null,
+                          error: null
+                        }));
+                      }}
+                      disabled={depositDialog.isSubmitting}
+                    >
+                      {accounts
+                        .filter((a) => a.status === 'ACTIVE')
+                        .map((a) => (
+                          <option key={a.accountId} value={a.accountId}>
+                            {a.accountNumber} ({a.accountType}) — {a.customerName} • Bal: {formatINR(a.balance)}
+                          </option>
+                        ))}
+                    </select>
+                  ) : depositDialog.account ? (
+                    <div className="txn-account-summary-box">
+                      <div className="summary-left">
+                        <span className="summary-acc-num font-mono">{depositDialog.account.accountNumber}</span>
+                        <span className="summary-acc-owner">{depositDialog.account.customerName} &bull; {depositDialog.account.accountType}</span>
+                      </div>
+                      <div className="summary-right">
+                        <span className="summary-label">Current Balance</span>
+                        <span className="summary-balance-val text-success">{formatINR(depositDialog.account.balance)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="alert-box-warning">No active accounts available for deposit.</div>
+                  )}
+                </div>
+
+                {/* Amount Input with Flex Container (NO overlap possible) */}
+                <div className="txn-form-group">
+                  <label htmlFor="deposit-amount-input" className="txn-form-label">
+                    <span>Deposit Amount</span>
+                    <span className="text-danger">*</span>
+                  </label>
+                  <div className="currency-input-container">
+                    <span className="currency-prefix-sign">₹</span>
+                    <input
+                      id="deposit-amount-input"
+                      type="text"
+                      inputMode="decimal"
+                      className="currency-number-input"
+                      placeholder="0.00"
+                      value={depositDialog.amount}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
+                          setDepositDialog((prev) => ({ ...prev, amount: val, error: null }));
+                        }
+                      }}
+                      disabled={depositDialog.isSubmitting}
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Clean Single-Row Quick Chips */}
+                  <div className="quick-chips-row">
+                    <span className="quick-chips-label">Quick select:</span>
+                    {[500, 1000, 2500, 5000, 10000].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        className="quick-chip-btn"
+                        onClick={() => setDepositDialog((prev) => ({ ...prev, amount: amt.toString(), error: null }))}
+                        disabled={depositDialog.isSubmitting}
+                      >
+                        +{amt >= 1000 ? `₹${amt / 1000}k` : `₹${amt}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Live Projected Balance Calculation */}
+                {depositDialog.account && Number(depositDialog.amount) > 0 && (
+                  <div className="projected-balance-card deposit-projection">
+                    <div className="proj-label">
+                      <span>Current: <strong>{formatINR(depositDialog.account.balance)}</strong></span>
+                      <span className="text-success">+ Deposit: <strong>{formatINR(depositDialog.amount)}</strong></span>
+                    </div>
+                    <div className="proj-val text-success">
+                      {formatINR(Number(depositDialog.account.balance) + Number(depositDialog.amount))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Remarks */}
+                <div className="txn-form-group">
+                  <label htmlFor="deposit-remarks-input" className="txn-form-label">
+                    <span>Audit Remarks / Deposit Slip #</span>
+                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>(Optional)</span>
+                  </label>
+                  <input
+                    id="deposit-remarks-input"
+                    type="text"
+                    className="txn-text-input"
+                    placeholder="e.g. Counter cash deposit, Slip #DEP-4821"
+                    value={depositDialog.remarks}
+                    onChange={(e) => setDepositDialog((prev) => ({ ...prev, remarks: e.target.value }))}
+                    disabled={depositDialog.isSubmitting}
+                    maxLength={255}
+                  />
+                </div>
+
+                {/* Error Banner */}
+                {depositDialog.error && (
+                  <div className="field-error-banner" role="alert">
+                    <IconAlertCircle size={16} />
+                    <span>{depositDialog.error}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="txn-modal-actions">
+                <button
+                  type="button"
+                  className="btn-secondary-custom"
+                  onClick={() => setDepositDialog(null)}
+                  disabled={depositDialog.isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-action-deposit"
+                  style={{ padding: '0.65rem 1.35rem', fontSize: '0.875rem', fontWeight: 600 }}
+                  disabled={depositDialog.isSubmitting || !depositDialog.account || !depositDialog.amount || Number(depositDialog.amount) <= 0}
+                >
+                  {depositDialog.isSubmitting ? (
+                    <>
+                      <IconRefreshCw size={15} className="spin-icon" />
+                      <span>Processing Deposit...</span>
+                    </>
+                  ) : (
+                    <>
+                      <IconArrowDownCircle size={16} />
+                      <span>Confirm Deposit {Number(depositDialog.amount) > 0 ? formatINR(depositDialog.amount) : ''}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================
+          WITHDRAW CASH MODAL (FR-13, FR-14, FR-18, FR-19, TC-06, TC-15)
+          ======================================================================== */}
+      {withdrawDialog && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="withdraw-dialog-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !withdrawDialog.isSubmitting) {
+              setWithdrawDialog(null);
+            }
+          }}
+        >
+          <div className="modal-card txn-modal-card">
+            <div className="modal-header">
+              <div className="modal-title-box">
+                <IconArrowUpCircle size={22} className="modal-header-icon text-info" />
+                <h3 id="withdraw-dialog-title">Counter Cash Withdrawal</h3>
+              </div>
+              <button
+                type="button"
+                className="modal-close-icon-btn"
+                onClick={() => setWithdrawDialog(null)}
+                disabled={withdrawDialog.isSubmitting}
+                aria-label="Close dialog"
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteWithdraw}>
+              <div className="txn-modal-body">
+                {/* Account Selector / Information */}
+                <div className="txn-form-group">
+                  <label htmlFor="withdraw-account-select" className="txn-form-label">
+                    <span>Source Account</span>
+                    <span className="text-danger">*</span>
+                  </label>
+                  {accounts.filter((a) => a.status === 'ACTIVE').length > 1 ? (
+                    <select
+                      id="withdraw-account-select"
+                      className="txn-select-input"
+                      value={withdrawDialog.account?.accountId || ''}
+                      onChange={(e) => {
+                        const sel = accounts.find((a) => String(a.accountId) === e.target.value);
+                        setWithdrawDialog((prev) => ({
+                          ...prev,
+                          account: sel || null,
+                          error: null
+                        }));
+                      }}
+                      disabled={withdrawDialog.isSubmitting}
+                    >
+                      {accounts
+                        .filter((a) => a.status === 'ACTIVE')
+                        .map((a) => (
+                          <option key={a.accountId} value={a.accountId}>
+                            {a.accountNumber} ({a.accountType}) — {a.customerName} • Avail: {formatINR(a.balance)}
+                          </option>
+                        ))}
+                    </select>
+                  ) : withdrawDialog.account ? (
+                    <div className="txn-account-summary-box">
+                      <div className="summary-left">
+                        <span className="summary-acc-num font-mono">{withdrawDialog.account.accountNumber}</span>
+                        <span className="summary-acc-owner">{withdrawDialog.account.customerName} &bull; {withdrawDialog.account.accountType}</span>
+                      </div>
+                      <div className="summary-right">
+                        <span className="summary-label">Available Balance</span>
+                        <span className="summary-balance-val font-mono" style={{ color: '#38bdf8' }}>
+                          {formatINR(withdrawDialog.account.balance)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="alert-box-warning">No active accounts available for withdrawal.</div>
+                  )}
+                </div>
+
+                {/* Amount Input with Flex Container */}
+                <div className="txn-form-group">
+                  <label htmlFor="withdraw-amount-input" className="txn-form-label">
+                    <span>Withdrawal Amount</span>
+                    <span className="text-danger">*</span>
+                  </label>
+                  <div className="currency-input-container">
+                    <span className="currency-prefix-sign">₹</span>
+                    <input
+                      id="withdraw-amount-input"
+                      type="text"
+                      inputMode="decimal"
+                      className="currency-number-input"
+                      placeholder="0.00"
+                      value={withdrawDialog.amount}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
+                          setWithdrawDialog((prev) => ({ ...prev, amount: val, error: null }));
+                        }
+                      }}
+                      disabled={withdrawDialog.isSubmitting}
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Clean Single-Row Quick Chips */}
+                  <div className="quick-chips-row">
+                    <span className="quick-chips-label">Quick select:</span>
+                    {[500, 1000, 2500, 5000].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        className="quick-chip-btn"
+                        onClick={() => setWithdrawDialog((prev) => ({ ...prev, amount: amt.toString(), error: null }))}
+                        disabled={withdrawDialog.isSubmitting || (withdrawDialog.account && amt > Number(withdrawDialog.account.balance))}
+                      >
+                        {amt >= 1000 ? `₹${amt / 1000}k` : `₹${amt}`}
+                      </button>
+                    ))}
+                    {withdrawDialog.account && Number(withdrawDialog.account.balance) > 0 && (
+                      <button
+                        type="button"
+                        className="quick-chip-btn chip-max"
+                        onClick={() => setWithdrawDialog((prev) => ({ ...prev, amount: String(withdrawDialog.account.balance), error: null }))}
+                        disabled={withdrawDialog.isSubmitting}
+                        title="Withdraw entire account balance down to 0.00"
+                      >
+                        Max Balance ({formatINR(withdrawDialog.account.balance)})
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Overdraft Warning Banner (FR-14) */}
+                {withdrawDialog.account && Number(withdrawDialog.amount) > Number(withdrawDialog.account.balance) && (
+                  <div className="insufficient-funds-warning" role="alert">
+                    <IconAlertCircle size={16} />
+                    <span>
+                      <strong>Insufficient Funds:</strong> Requested amount of {formatINR(withdrawDialog.amount)} exceeds available balance of {formatINR(withdrawDialog.account.balance)}. Overdrafts are prohibited (FR-14).
+                    </span>
+                  </div>
+                )}
+
+                {/* Live Projected Balance Calculation */}
+                {withdrawDialog.account && Number(withdrawDialog.amount) > 0 && Number(withdrawDialog.amount) <= Number(withdrawDialog.account.balance) && (
+                  <div className="projected-balance-card withdraw-projection">
+                    <div className="proj-label">
+                      <span>Current: <strong>{formatINR(withdrawDialog.account.balance)}</strong></span>
+                      <span className="text-danger">- Withdrawal: <strong>{formatINR(withdrawDialog.amount)}</strong></span>
+                    </div>
+                    <div className="proj-val" style={{ color: '#38bdf8' }}>
+                      {formatINR(Number(withdrawDialog.account.balance) - Number(withdrawDialog.amount))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Remarks */}
+                <div className="txn-form-group">
+                  <label htmlFor="withdraw-remarks-input" className="txn-form-label">
+                    <span>Audit Remarks / Voucher #</span>
+                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>(Optional)</span>
+                  </label>
+                  <input
+                    id="withdraw-remarks-input"
+                    type="text"
+                    className="txn-text-input"
+                    placeholder="e.g. Counter cash withdrawal, Voucher #WTH-1092"
+                    value={withdrawDialog.remarks}
+                    onChange={(e) => setWithdrawDialog((prev) => ({ ...prev, remarks: e.target.value }))}
+                    disabled={withdrawDialog.isSubmitting}
+                    maxLength={255}
+                  />
+                </div>
+
+                {/* Error Banner */}
+                {withdrawDialog.error && (
+                  <div className="field-error-banner" role="alert">
+                    <IconAlertCircle size={16} />
+                    <span>{withdrawDialog.error}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="txn-modal-actions">
+                <button
+                  type="button"
+                  className="btn-secondary-custom"
+                  onClick={() => setWithdrawDialog(null)}
+                  disabled={withdrawDialog.isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-action-withdraw"
+                  style={{ padding: '0.65rem 1.35rem', fontSize: '0.875rem', fontWeight: 600 }}
+                  disabled={
+                    withdrawDialog.isSubmitting ||
+                    !withdrawDialog.account ||
+                    !withdrawDialog.amount ||
+                    Number(withdrawDialog.amount) <= 0 ||
+                    Number(withdrawDialog.amount) > Number(withdrawDialog.account.balance)
+                  }
+                >
+                  {withdrawDialog.isSubmitting ? (
+                    <>
+                      <IconRefreshCw size={15} className="spin-icon" />
+                      <span>Processing Withdrawal...</span>
+                    </>
+                  ) : (
+                    <>
+                      <IconArrowUpCircle size={16} />
+                      <span>Confirm Withdrawal {Number(withdrawDialog.amount) > 0 ? formatINR(withdrawDialog.amount) : ''}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

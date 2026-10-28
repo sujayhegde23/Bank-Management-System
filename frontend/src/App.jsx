@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getSystemHealth, login, logout, getCurrentUser, getAccounts } from './services/api';
+import { getSystemHealth, login, logout, getCurrentUser, getAccounts, getAccountTransactions } from './services/api';
 import EmployeeManagement from './components/EmployeeManagement';
 import AccountManagement from './components/AccountManagement';
 import './App.css';
@@ -118,11 +118,41 @@ function IconAlertCircle({ size = 18, className = '' }) {
   );
 }
 
-function IconClock({ size = 18, className = '' }) {
+function IconX({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function IconArrowDownCircle({ size = 18, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
+      <polyline points="8 12 12 16 16 12" />
+      <line x1="12" y1="8" x2="12" y2="16" />
+    </svg>
+  );
+}
+
+function IconArrowUpCircle({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="16 12 12 8 8 12" />
+      <line x1="12" y1="16" x2="12" y2="8" />
+    </svg>
+  );
+}
+
+function IconHistory({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
     </svg>
   );
 }
@@ -211,8 +241,12 @@ export default function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  // Navigation tab state: 'accounts' | 'employees' | 'diagnostics' | 'overview'
+  // Navigation tab state: 'accounts' | 'employees' | 'diagnostics' | 'overview' | 'statements'
   const [activeNav, setActiveNav] = useState('accounts');
+  const [accountAction, setAccountAction] = useState(null);
+  const [customerStatementModal, setCustomerStatementModal] = useState(null);
+  const [custStatementTxns, setCustStatementTxns] = useState([]);
+  const [custStatementLoading, setCustStatementLoading] = useState(false);
 
   // Customer retail accounts state (FR-09)
   const [customerAccounts, setCustomerAccounts] = useState([]);
@@ -602,23 +636,35 @@ export default function App() {
                 <span className="nav-badge-pending">Sprint 2</span>
               </div>
 
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Deposit workflow scheduled for Sprint 2 (FR-12)"
+              <button
+                id="nav-cash-deposit-btn"
+                type="button"
+                className={`sidebar-nav-item ${activeNav === 'accounts' && accountAction === 'deposit' ? 'selected' : ''}`}
+                onClick={() => {
+                  setActiveNav('accounts');
+                  setAccountAction('deposit');
+                }}
+                title="Deposit cash into customer accounts (FR-12)"
               >
-                <IconCreditCard size={17} />
+                <IconArrowDownCircle size={17} />
                 <span>Cash Deposit</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
+                <span className="nav-badge-active" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>Active</span>
+              </button>
 
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Withdrawal workflow scheduled for Sprint 2 (FR-13)"
+              <button
+                id="nav-cash-withdrawal-btn"
+                type="button"
+                className={`sidebar-nav-item ${activeNav === 'accounts' && accountAction === 'withdraw' ? 'selected' : ''}`}
+                onClick={() => {
+                  setActiveNav('accounts');
+                  setAccountAction('withdraw');
+                }}
+                title="Withdraw cash from customer accounts (FR-13)"
               >
-                <IconCreditCard size={17} />
+                <IconArrowUpCircle size={17} />
                 <span>Cash Withdrawal</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
+                <span className="nav-badge-active" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>Active</span>
+              </button>
             </>
           )}
 
@@ -644,14 +690,30 @@ export default function App() {
                 <span className="nav-badge-pending">Sprint 2</span>
               </div>
 
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Transaction history statement scheduled for Sprint 2 (FR-20)"
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeNav === 'statements' ? 'selected' : ''}`}
+                onClick={async () => {
+                  setActiveNav('statements');
+                  if (customerAccounts.length > 0) {
+                    setCustomerStatementModal(customerAccounts[0]);
+                    setCustStatementLoading(true);
+                    try {
+                      const res = await getAccountTransactions(customerAccounts[0].accountId, { page: 1, size: 20 });
+                      setCustStatementTxns(res?.transactions || []);
+                    } catch {
+                      setCustStatementTxns([]);
+                    } finally {
+                      setCustStatementLoading(false);
+                    }
+                  }
+                }}
+                title="View bank account statements and ledger records (FR-20)"
               >
-                <IconClock size={17} />
+                <IconHistory size={17} />
                 <span>Statements</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
+                <span className="nav-badge-active">Active</span>
+              </button>
             </>
           )}
 
@@ -840,12 +902,132 @@ export default function App() {
                 </table>
               </div>
             </div>
+          ) : isCustomer ? (
+            /* ==================================================================
+               CUSTOMER: RETAIL BANKING PORTAL (FR-09 Live Account Overview)
+               Strictly isolates retail customers from staff administration
+               ================================================================== */
+            <div className="role-portal-view">
+              <div className="portal-banner">
+                <div className="portal-banner-icon icon-customer-banner">
+                  <IconLandmark size={28} />
+                </div>
+                <div>
+                  <h1 className="portal-title">Personal Online Banking Portal</h1>
+                  <p className="portal-subtitle">
+                    Account Holder: <strong>{currentUser.displayName}</strong> &bull; Customer ID #{currentUser.customerId || '1'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Verified Accounts Live Ledger Section (FR-09) */}
+              <div className="customer-accounts-section" style={{ marginBottom: '2rem' }}>
+                <div className="emp-page-header" style={{ marginBottom: '1rem' }}>
+                  <div>
+                    <h2 className="emp-page-title" style={{ fontSize: '1.25rem' }}>Your Bank Accounts</h2>
+                    <p className="emp-page-subtitle">
+                      Live account balances and operational status from the core banking ledger (FR-09).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary-custom"
+                    onClick={loadCustomerAccounts}
+                    disabled={custAccountsLoading}
+                  >
+                    <IconCreditCard size={15} />
+                    <span>{custAccountsLoading ? 'Refreshing...' : 'Refresh Balance'}</span>
+                  </button>
+                </div>
+
+                {custAccountsLoading ? (
+                  <div className="table-skeleton-container" style={{ padding: '1rem' }}>
+                    <div className="skeleton-row" />
+                    <div className="skeleton-row" />
+                  </div>
+                ) : customerAccounts.length === 0 ? (
+                  <div className="empty-state-box" style={{ padding: '2rem' }}>
+                    <IconCreditCard size={32} className="empty-state-icon" />
+                    <h3>No Bank Accounts Linked</h3>
+                    <p>Please contact branch staff to open a savings or current account for your customer profile.</p>
+                  </div>
+                ) : (
+                  <div className="emp-stats-grid">
+                    {customerAccounts.map((acc) => {
+                      const numVal = Number(acc.balance) || 0;
+                      const formatted = new Intl.NumberFormat('en-IN', {
+                        style: 'currency',
+                        currency: 'INR',
+                        minimumFractionDigits: 2
+                      }).format(numVal);
+
+                      return (
+                        <div key={acc.accountId} className="emp-stat-card" style={{ padding: '1.25rem 1.5rem' }}>
+                          <div className="stat-icon-wrapper active-icon">
+                            <IconLandmark size={22} />
+                          </div>
+                          <div className="stat-details" style={{ width: '100%' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span className="stat-label">{acc.accountType} ACCOUNT</span>
+                              <span className={`status-badge-custom badge-${String(acc.status).toLowerCase()}`} style={{ fontSize: '0.68rem', padding: '0.15rem 0.5rem' }}>
+                                <span className="status-dot" />
+                                <span>{acc.status}</span>
+                              </span>
+                            </div>
+                            <span className="stat-value font-mono" style={{ fontSize: '1.4rem', color: '#60a5fa', margin: '0.35rem 0' }}>
+                              {acc.accountNumber}
+                            </span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '0.25rem' }}>
+                              <span className="stat-desc">Available Balance</span>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: '800', fontSize: '1.25rem', color: '#f8fafc' }}>
+                                {formatted}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn-secondary-custom"
+                              style={{ marginTop: '0.85rem', width: '100%', justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
+                              onClick={async () => {
+                                setCustomerStatementModal(acc);
+                                setCustStatementLoading(true);
+                                try {
+                                  const res = await getAccountTransactions(acc.accountId, { page: 1, size: 20 });
+                                  setCustStatementTxns(res?.transactions || []);
+                                } catch {
+                                  setCustStatementTxns([]);
+                                } finally {
+                                  setCustStatementLoading(false);
+                                }
+                              }}
+                            >
+                              <IconHistory size={14} />
+                              <span>View Statement &amp; Ledger</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Customer Roadmap Notice Box */}
+              <div className="roadmap-notice-box">
+                <div className="roadmap-notice-header">
+                  <IconShield size={18} className="roadmap-shield-icon" />
+                  <h4>Online Banking Notice &bull; Cash Counter Clearance Policy</h4>
+                </div>
+                <p>
+                  You are securely logged into your personal <strong>Retail Banking Portal</strong>. Under bank security policy (FR-03, AUTH_002), cash counter deposits and cash withdrawals must be processed in-person at a branch teller window by an authorized <strong>Bank Employee</strong>.
+                </p>
+              </div>
+            </div>
           ) : activeNav === 'accounts' ? (
             /* ==================================================================
-               ACCOUNT MANAGEMENT CONSOLE (Issue #7)
+               ACCOUNT MANAGEMENT CONSOLE (Issue #7 & Issue #8)
                Accessible to Bank Employees (and Admin oversight)
                ================================================================== */
-            <AccountManagement currentUser={currentUser} />
+            <AccountManagement currentUser={currentUser} initialAction={accountAction} onActionConsumed={() => setAccountAction(null)} />
           ) : activeNav === 'employees' && isAdmin ? (
             /* ==================================================================
                ADMINISTRATOR: EMPLOYEE MANAGEMENT CONSOLE (Issue #11)
@@ -1013,6 +1195,26 @@ export default function App() {
                                 {formatted}
                               </span>
                             </div>
+                            <button
+                              type="button"
+                              className="btn-secondary-custom"
+                              style={{ marginTop: '0.85rem', width: '100%', justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
+                              onClick={async () => {
+                                setCustomerStatementModal(acc);
+                                setCustStatementLoading(true);
+                                try {
+                                  const res = await getAccountTransactions(acc.accountId, { page: 1, size: 20 });
+                                  setCustStatementTxns(res?.transactions || []);
+                                } catch {
+                                  setCustStatementTxns([]);
+                                } finally {
+                                  setCustStatementLoading(false);
+                                }
+                              }}
+                            >
+                              <IconHistory size={14} />
+                              <span>View Statement &amp; Ledger</span>
+                            </button>
                           </div>
                         </div>
                       );
@@ -1078,6 +1280,107 @@ export default function App() {
           )}
         </main>
       </div>
+      {/* Customer Account Statement Modal */}
+      {customerStatementModal && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setCustomerStatementModal(null);
+          }}
+        >
+          <div className="modal-card" style={{ maxWidth: '640px' }}>
+            <div className="modal-header">
+              <div className="modal-title-box">
+                <IconHistory size={22} className="modal-header-icon text-info" />
+                <h3>Account Statement: {customerStatementModal.accountNumber}</h3>
+              </div>
+              <button
+                type="button"
+                className="modal-close-icon-btn"
+                onClick={() => setCustomerStatementModal(null)}
+                aria-label="Close statement"
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body-content" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
+              <div className="txn-account-summary-box" style={{ background: '#090e1a', padding: '0.85rem 1rem', borderRadius: '6px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div>
+                  <div style={{ color: '#60a5fa', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{customerStatementModal.accountNumber}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{customerStatementModal.accountType} Account • Status: {customerStatementModal.status}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Available Balance</div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.2rem', color: '#f8fafc' }}>
+                    {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(customerStatementModal.balance) || 0)}
+                  </div>
+                </div>
+              </div>
+
+              <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
+                Transaction History
+              </h4>
+
+              {custStatementLoading ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>Loading statement ledger...</div>
+              ) : custStatementTxns.length === 0 ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                  No transaction records found for this account.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="emp-table-custom" style={{ width: '100%', fontSize: '0.8rem' }}>
+                    <thead>
+                      <tr>
+                        <th>Date &amp; Time</th>
+                        <th>Reference</th>
+                        <th>Type</th>
+                        <th style={{ textAlign: 'right' }}>Amount</th>
+                        <th>Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {custStatementTxns.map((tx) => (
+                        <tr key={tx.transaction_id || tx.transactionId}>
+                          <td style={{ whiteSpace: 'nowrap', color: '#94a3b8' }}>
+                            {new Date(tx.created_at || tx.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                          </td>
+                          <td style={{ fontFamily: 'var(--font-mono)', color: '#60a5fa' }}>
+                            {tx.transaction_ref || tx.transactionRef || tx.transactionReference}
+                          </td>
+                          <td>
+                            <span className={`badge badge-${String(tx.transaction_type || tx.type).toLowerCase() === 'deposit' ? 'success' : 'info'}`}>
+                              {tx.transaction_type || tx.type}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: String(tx.transaction_type || tx.type).toUpperCase() === 'DEPOSIT' ? '#34d399' : '#f87171' }}>
+                            {String(tx.transaction_type || tx.type).toUpperCase() === 'DEPOSIT' ? '+' : '-'}
+                            {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(tx.amount))}
+                          </td>
+                          <td style={{ color: '#94a3b8' }}>{tx.remarks || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-actions-row">
+              <button
+                type="button"
+                className="btn-secondary-custom"
+                onClick={() => setCustomerStatementModal(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -18,6 +18,11 @@ const router = express.Router();
 const { query, withTransaction } = require('../config/db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { generateUniqueAccountNumber } = require('../services/accountService');
+const {
+  executeDeposit,
+  executeWithdrawal,
+  getAccountTransactions
+} = require('../services/transactionService');
 
 // Permitted account types
 const VALID_ACCOUNT_TYPES = ['SAVINGS', 'CURRENT'];
@@ -570,6 +575,121 @@ router.patch('/:accountId/status', requireAuth, requireRole('EMPLOYEE'), async (
         openedAt: updated.opened_at,
         updatedAt: updated.updated_at
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+/**
+ * POST /api/accounts/:accountId/deposits
+ * Deposit money into an active account (FR-11, FR-12, FR-18, FR-19, Architecture §9.3.10).
+ * Access: Authenticated EMPLOYEE only.
+ */
+router.post('/:accountId/deposits', requireAuth, requireRole('EMPLOYEE'), async (req, res, next) => {
+  try {
+    const accountId = parseStrictAccountId(req.params.accountId);
+    if (!accountId) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'VAL_001',
+        message: 'Invalid account ID. Must be a positive integer.',
+        error: {
+          code: 'VAL_001',
+          message: 'Invalid account ID. Must be a positive integer.'
+        }
+      });
+    }
+
+    const { amount, remarks, _testFailurePoint } = req.body || {};
+    const result = await executeDeposit({
+      accountId,
+      amount,
+      remarks,
+      performedByUserId: req.user.userId,
+      _testFailurePoint
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: `Successfully deposited ${new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(result.amount)} into account ${result.accountNumber}.`,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/accounts/:accountId/withdrawals
+ * Withdraw money from an active account (FR-11, FR-13, FR-14, FR-18, FR-19, Architecture §9.3.11).
+ * Access: Authenticated EMPLOYEE only.
+ */
+router.post('/:accountId/withdrawals', requireAuth, requireRole('EMPLOYEE'), async (req, res, next) => {
+  try {
+    const accountId = parseStrictAccountId(req.params.accountId);
+    if (!accountId) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'VAL_001',
+        message: 'Invalid account ID. Must be a positive integer.',
+        error: {
+          code: 'VAL_001',
+          message: 'Invalid account ID. Must be a positive integer.'
+        }
+      });
+    }
+
+    const { amount, remarks, _testFailurePoint } = req.body || {};
+    const result = await executeWithdrawal({
+      accountId,
+      amount,
+      remarks,
+      performedByUserId: req.user.userId,
+      _testFailurePoint
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: `Successfully withdrew ${new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(result.amount)} from account ${result.accountNumber}.`,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/accounts/:accountId/transactions
+ * Retrieve transaction history for an account (FR-20, FR-21, Architecture §9.3.13).
+ * Access: Authenticated Customer (own account), Employee, Admin.
+ */
+router.get('/:accountId/transactions', requireAuth, async (req, res, next) => {
+  try {
+    const accountId = parseStrictAccountId(req.params.accountId);
+    if (!accountId) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'VAL_001',
+        message: 'Invalid account ID. Must be a positive integer.',
+        error: {
+          code: 'VAL_001',
+          message: 'Invalid account ID. Must be a positive integer.'
+        }
+      });
+    }
+
+    const result = await getAccountTransactions({
+      accountId,
+      user: req.user,
+      page: req.query.page,
+      size: req.query.size || req.query.limit
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result
     });
   } catch (error) {
     next(error);
