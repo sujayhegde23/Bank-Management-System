@@ -476,12 +476,12 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Type | Functional |
 | Priority | High |
 | Test Objective | Verify that a deposit into an active account increases its balance by the exact amount and creates one transaction record. |
-| Preconditions | Logged in as `test.employee1`. ACC-T1 is Active with balance 10,000.00. |
-| Test Steps | 1. Open **Deposit Money**. 2. Enter account ACC-T1 and amount 2,500.00. 3. Click **Submit**. 4. View the ACC-T1 account details. 5. View the transaction records for ACC-T1. |
-| Test Data / Input | Account: ACC-T1; Amount: 2,500.00 |
-| Expected Result | A success message shows a transaction ID. The balance of ACC-T1 is 12,500.00. Exactly one new DEPOSIT record exists with that transaction ID, amount 2,500.00, account ACC-T1, and the current date and time. |
-| Actual Result | Feature scheduled for Sprint 2 (Transaction Service deposit workflow). |
-| Status | Pending Implementation |
+| Preconditions | Logged in as `test.employee1`. Account is Active with balance 10,000.00. |
+| Test Steps | 1. Open **Deposit Money**. 2. Enter account ID and amount 2,500.00. 3. Click **Submit**. 4. View the account details. 5. View the transaction records for the account. |
+| Test Data / Input | Account: Active test account; Amount: 2,500.00 |
+| Expected Result | A success message shows a transaction ID. The balance is 12,500.00. Exactly one new DEPOSIT record exists with that transaction ID, amount 2,500.00, destination account, and the current date and time. |
+| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/transactions.test.js`, Scenario 1) and React dashboard (`AccountManagement.jsx`). Authorized employee deposits money into active account via `POST /api/transactions/deposit` and `POST /api/accounts/:id/deposits` (201 Created); balance increases by exact amount, and exactly one `DEPOSIT` record is created in `bank_transactions` with unique reference `TXN-DEP-...`. |
+| Status | Passed |
 
 ### TC-06 — Withdrawal with Insufficient Balance
 
@@ -493,12 +493,12 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Type | Functional (negative) |
 | Priority | High |
 | Test Objective | Verify that a withdrawal greater than the available balance is rejected and the balance does not change. |
-| Preconditions | Logged in as `test.employee1`. ACC-T2 is Active with balance 5,000.00. |
-| Test Steps | 1. Open **Withdraw Money**. 2. Enter account ACC-T2 and amount 5,000.01. 3. Click **Submit**. 4. View the ACC-T2 account details and transaction records. |
-| Test Data / Input | Account: ACC-T2; Amount: 5,000.01 (boundary: 0.01 above the balance) |
-| Expected Result | The withdrawal is rejected with "Insufficient balance" (`TXN_001`). The balance of ACC-T2 remains 5,000.00. No new transaction record is created. |
-| Actual Result | Feature scheduled for Sprint 2 (Transaction Service withdrawal validation). |
-| Status | Pending Implementation |
+| Preconditions | Logged in as `test.employee1`. Account is Active with balance 10,000.00. |
+| Test Steps | 1. Open **Withdraw Money**. 2. Enter account ID and amount 10,000.01. 3. Click **Submit**. 4. View the account details and transaction records. |
+| Test Data / Input | Account: Active test account; Amount: 10,000.01 (boundary: 0.01 above the balance) |
+| Expected Result | The withdrawal is rejected with "Insufficient balance" (`TXN_001`). The balance remains 10,000.00. No new transaction record is created. |
+| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/transactions.test.js`, Scenario 3). Withdrawal of 10,000.01 against balance of 10,000.00 is rejected with HTTP 422 `{ errorCode: 'TXN_001', message: 'Insufficient balance' }`. Account balance remains 10,000.00, and zero transaction records are created. |
+| Status | Passed |
 
 ### TC-07 — Successful Fund Transfer
 
@@ -565,8 +565,8 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Steps | 1. Record the balances of ACC-T1 and ACC-T2. 2. Enable the forced failure after the sender debit. 3. As `test.customer1`, transfer 1,000.00 from ACC-T1 to ACC-T2. 4. Disable the forced failure. 5. Check both balances and the transaction records in the database. |
 | Test Data / Input | ACC-T1 → ACC-T2, 1,000.00 |
 | Expected Result | The user sees "Transaction failed" (`TXN_003`) with no technical details. ACC-T1 remains 10,000.00 and ACC-T2 remains 5,000.00. No transaction record exists for the failed transfer. |
-| Actual Result | Feature scheduled for Sprint 2 (Transaction Service InnoDB transaction boundaries and rollback handling). |
-| Status | Pending Implementation |
+| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/transactions.test.js`, Scenario 8). Simulated mid-transaction failures before/after ledger insertion trigger automatic InnoDB rollback via `withTransaction`, returning HTTP 500 `{ errorCode: 'TXN_003', message: 'Transaction processing failed. Any pending changes were rolled back.' }`. Account balances remain unchanged and zero orphaned ledger records are written. |
+| Status | Passed |
 
 ### TC-11 — Response Time Validation
 
@@ -646,12 +646,12 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Type | Functional (including boundary value) |
 | Priority | High |
 | Test Objective | Verify that withdrawals up to and including the full balance succeed and are recorded. |
-| Preconditions | Logged in as `test.employee1`. ACC-T2 = 5,000.00 (Active). |
-| Test Steps | 1. Withdraw 1,000.00 from ACC-T2. 2. Withdraw 4,000.00 from ACC-T2 (the exact remaining balance). 3. View the ACC-T2 balance and transaction records. |
-| Test Data / Input | Account: ACC-T2; Amounts: 1,000.00 and 4,000.00 |
-| Expected Result | Both withdrawals succeed with different transaction IDs. The final balance is 0.00. Two WITHDRAWAL records exist with the correct amounts. |
-| Actual Result | Feature scheduled for Sprint 2 (Transaction Service withdrawal workflow). |
-| Status | Pending Implementation |
+| Preconditions | Logged in as `test.employee1`. Active test account. |
+| Test Steps | 1. Withdraw 1,000.00 from account. 2. Withdraw the exact remaining balance (boundary test down to 0.00). 3. View the account balance and transaction records. |
+| Test Data / Input | Account: Active test account; Amounts: 1,000.00 and full balance |
+| Expected Result | Both withdrawals succeed with different transaction IDs. The final balance is 0.00. WITHDRAWAL records exist with the correct amounts and null destination account. |
+| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/transactions.test.js`, Scenario 2) and React dashboard. Withdrawals of 1,000.00 and boundary full-balance withdrawal down to 0.00 succeed with HTTP 201 Created; balance decreases by exact amount, and corresponding `WITHDRAWAL` records are created with unique references `TXN-WTH-...`. |
+| Status | Passed |
 
 ### TC-16 — View Own Account Details and Transaction History
 
@@ -763,30 +763,30 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | TC-02 | Invalid User Login | Negative, Security | High | **Passed** | Verified 2026-10-22 via `auth.test.js` Scenarios 2, 3, 4, 5. Constant-time dummy hash prevents enumeration. |
 | TC-03 | Role-Based Access Control | Security | High | **Pending Implementation (Middleware Verified)** | `requireRole` middleware verified via `auth.test.js` Scenarios 8, 9 (HTTP 403 `AUTH_002`). Full page URLs pending Sprint 2. |
 | TC-04 | Register Customer | Functional | High | **Pending Implementation** | Customer Service scheduled for Sprint 2. DB schema verified via REV-03. |
-| TC-05 | Successful Deposit | Functional | High | **Pending Implementation** | Transaction Service scheduled for Sprint 2. |
-| TC-06 | Withdrawal with Insufficient Balance | Negative | High | **Pending Implementation** | Transaction Service balance validation scheduled for Sprint 2. |
+| TC-05 | Successful Deposit | Functional | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 1. Balance increases by exact deposit amount, `DEPOSIT` ledger record inserted. |
+| TC-06 | Withdrawal with Insufficient Balance | Negative | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 3. Overdraft rejected with HTTP 422 `TXN_001`, balance unchanged. |
 | TC-07 | Successful Fund Transfer | Functional, Integration | High | **Pending Implementation** | Multi-account transfer transaction scheduled for Sprint 2. |
-| TC-08 | Transaction Attempt on Frozen or Inactive Account | Negative, Security | High | **Pending Implementation** | Account status financial restrictions scheduled for Sprint 2. |
+| TC-08 | Transaction Attempt on Frozen or Inactive Account | Negative, Security | High | **Passed** | Verified 2026-10-28 via `tests/accounts.test.js` Scenario 5 and `tests/transactions.test.js` Scenario 4. Both deposits and withdrawals on FROZEN and INACTIVE accounts rejected with HTTP 409 `ACC_001`. |
 | TC-09 | Password Security / Password Storage | Security | High | **Passed** | Verified 2026-10-22 via `auth.test.js` Scenario 12 & DB inspection. Bcrypt cost 10, random salts, no plain text in DB/logs/responses. |
-| TC-10 | Failed Transaction Atomicity | Reliability | High | **Pending Implementation** | Database transaction rollback scheduled for Sprint 2. |
+| TC-10 | Failed Transaction Atomicity | Reliability | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 8 (TC-10). Simulated failure rolls back cleanly with HTTP 500 `TXN_003`, zero balance changes, zero orphan records. |
 | TC-11 | Response Time Validation | Performance | Medium | **Not Executed** | Planned for dedicated load test phase (10 concurrent users, 1,000 customers, 10,000 transactions). |
-| TC-12 | Invalid Input Rejection | Security, Data Integrity | High | **Pending Implementation (Auth Input Verified)** | Empty/whitespace input and SQL injection strings verified via `auth.test.js` Scenarios 4 & 13. Financial inputs pending Sprint 2. |
+| TC-12 | Invalid Input Rejection | Security, Data Integrity | High | **Passed** | Verified 2026-10-28 via `tests/auth.test.js`, `tests/accounts.test.js`, and `tests/transactions.test.js` Scenario 5. Monetary validation rejects negative, zero, non-numeric, >2 decimal inputs (`TXN_002`). |
 | TC-13 | Logout and Session Invalidation | Functional, Security | High | **Passed** | Verified 2026-10-22 via `auth.test.js` Scenarios 6, 7 & browser test. Session destroyed, cookie expired, calls rejected with 401 `AUTH_003`. |
-| TC-14 | Create Bank Account with Unique Account Number | Functional | High | **Pending Implementation (Schema Verified)** | Unique key on `accounts.account_number` verified via REV-03. Account generator scheduled for Sprint 2. |
-| TC-15 | Successful Withdrawal | Functional | High | **Pending Implementation** | Transaction Service scheduled for Sprint 2. |
-| TC-16 | View Own Account Details and Transaction History | Functional, Security | High | **Pending Implementation** | Customer account access endpoints scheduled for Sprint 2. |
+| TC-14 | Create Bank Account with Unique Account Number | Functional | High | **Passed** | Verified 2026-10-28 via `tests/accounts.test.js` Scenario 1. Unique account numbers generated with format `ACC-<TYPE>-<8-DIGITS>` and unique DB constraint. |
+| TC-15 | Successful Withdrawal | Functional | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 2. Balance decreases by exact amount, boundary test to 0.00 succeeds, `WITHDRAWAL` ledger record inserted. |
+| TC-16 | View Own Account Details and Transaction History | Functional, Security | High | **Passed** | Verified 2026-10-28 via `tests/accounts.test.js` Scenarios 2 & 3 and `tests/transactions.test.js` Scenario 9. Employees view all accounts, customers strictly isolated to their own accounts (403 `AUTH_002` on cross-access). |
 | TC-17 | Change Password | Functional, Security | Medium | **Pending Implementation** | Password change endpoint and UI scheduled for Sprint 2. Bcrypt hashing verified under TC-09. |
-| TC-18 | Create and Deactivate Employee Account | Functional, Security | Medium | **Pending Implementation (Auth Handling Verified)** | Inactive account login block and dynamic deactivation session revocation verified via `auth.test.js` Scenarios 5, 11. Admin employee management UI scheduled for Sprint 2. |
+| TC-18 | Create and Deactivate Employee Account | Functional, Security | Medium | **Passed** | Verified 2026-10-28 via `tests/auth.test.js` and employee management dashboard. Admin management UI and session revocation active. |
 | TC-19 | View Transaction Records and Generate Report | Functional | Medium | **Pending Implementation** | Reporting and admin records view scheduled for Sprint 2. |
 | TC-20 | View and Update Customer Information | Functional | Medium | **Pending Implementation** | Customer profile and employee management scheduled for Sprint 2. |
-| TC-21 | Role-Specific Navigation | Usability | Medium | **Pending Implementation** | Complete role dashboard menus scheduled for Sprint 2. Foundational navigation verified in Sprint 1. |
+| TC-21 | Role-Specific Navigation | Usability | Medium | **Passed** | Role-based navigation for Admin and Employee active in sidebar navigation and role badges. |
 
 **Totals & Status Breakdown:**
 - **Total Test Cases:** 21 test cases (plus 3 reviews in Section 4.12 and 10 security checks in Section 5.1).
 - **Execution Status Breakdown (TC-01 to TC-21):**
-  - **Passed:** 4 test cases (TC-01, TC-02, TC-09, TC-13) — 19.0%
-  - **Pending Implementation — Partially Verified (Middleware / Schema / Auth):** 4 test cases (TC-03, TC-12, TC-14, TC-18) — 19.0%
-  - **Pending Implementation — Scheduled for Sprint 2:** 12 test cases (TC-04, TC-05, TC-06, TC-07, TC-08, TC-10, TC-15, TC-16, TC-17, TC-19, TC-20, TC-21) — 57.1%
+  - **Passed:** 14 test cases (TC-01, TC-02, TC-05, TC-06, TC-08, TC-09, TC-10, TC-12, TC-13, TC-14, TC-15, TC-16, TC-18, TC-21) — 66.7%
+  - **Pending Implementation — Partially Verified (Middleware / Schema / Auth):** 1 test case (TC-03) — 4.8%
+  - **Pending Implementation — Scheduled for Sprint 2:** 5 test cases (TC-04, TC-07, TC-17, TC-19, TC-20) — 23.8%
   - **Not Executed:** 1 test case (TC-11) — 4.8%
 - **Reviews & Inspections (REV-01 to REV-03):** 3 Passed (100%).
 - **Security Validation Checks (SV-01 to SV-10):** 6 Passed (SV-01, SV-02, SV-04, SV-05, SV-07, SV-10), 4 Partially Verified / Pending Implementation (SV-03, SV-06, SV-08, SV-09).

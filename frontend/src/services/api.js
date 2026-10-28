@@ -262,3 +262,70 @@ export async function updateAccountStatus(accountId, status, reason = '') {
   });
   return response?.data || response;
 }
+
+/**
+ * ==============================================================================
+ * Transaction Management API (Issue #8)
+ * ==============================================================================
+ */
+
+/**
+ * Deposit funds into an active bank account (FR-12, AC-1).
+ * @param {string|number} accountId - Target account ID
+ * @param {number|string} amount - Monetary amount to deposit
+ * @param {string} [remarks] - Optional audit note
+ * @returns {Promise<any>}
+ */
+export async function depositFunds(accountId, amount, remarks = '') {
+  const response = await apiRequest(`/accounts/${accountId}/deposits`, {
+    method: 'POST',
+    body: JSON.stringify({ amount, remarks })
+  });
+  return response?.data || response;
+}
+
+/**
+ * Withdraw funds from an active bank account (FR-13, FR-14, AC-2, AC-4).
+ * @param {string|number} accountId - Source account ID
+ * @param {number|string} amount - Monetary amount to withdraw
+ * @param {string} [remarks] - Optional audit note
+ * @returns {Promise<any>}
+ */
+export async function withdrawFunds(accountId, amount, remarks = '') {
+  const response = await apiRequest(`/accounts/${accountId}/withdrawals`, {
+    method: 'POST',
+    body: JSON.stringify({ amount, remarks })
+  });
+  return response?.data || response;
+}
+
+/**
+ * Fetch transaction history for a specific bank account (FR-20, FR-21).
+ * @param {string|number} accountId
+ * @param {{ page?: number, size?: number }} [params]
+ * @returns {Promise<any>}
+ */
+export async function getAccountTransactions(accountId, params = {}) {
+  const query = new URLSearchParams();
+  if (params.page) query.append('page', params.page);
+  if (params.size) query.append('size', params.size);
+
+  const endpoint = `/accounts/${accountId}/transactions${query.toString() ? `?${query.toString()}` : ''}`;
+  const response = await apiRequest(endpoint);
+  return response?.data || response;
+}
+
+/**
+ * Fetch recent transaction records across the bank (Employee/Admin oversight).
+ * @param {{ page?: number, limit?: number }} [params]
+ * @returns {Promise<any>}
+ */
+export async function getRecentTransactions(params = {}) {
+  const query = new URLSearchParams();
+  if (params.page) query.append('page', params.page);
+  if (params.limit) query.append('limit', params.limit);
+
+  const endpoint = `/transactions${query.toString() ? `?${query.toString()}` : ''}`;
+  const response = await apiRequest(endpoint);
+  return response?.data || response;
+}

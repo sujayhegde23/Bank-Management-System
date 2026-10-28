@@ -1261,3 +1261,374 @@
   background: #047857 !important;
   border-color: #059669 !important;
 }
+
+/* ------------------------------------------------------------------------------
+   Deposit and Withdrawal Action Buttons (Issue #8)
+   ------------------------------------------------------------------------------ */
+.btn-action-deposit {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.775rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s ease;
+}
+
+.btn-action-deposit:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: #10b981;
+  color: #ffffff;
+}
+
+.btn-action-deposit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-action-withdraw {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.775rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s ease;
+}
+
+.btn-action-withdraw:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.btn-action-withdraw:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------------------
+   Transaction Dialogs (Deposit / Withdrawal Modals) — Polished Banking Aesthetic
+   ------------------------------------------------------------------------------ */
+.txn-modal-card {
+  max-width: 540px !important;
+  width: 100% !important;
+  background: #0d1527 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+  overflow: hidden;
+}
+
+.txn-modal-body {
+  padding: 1.5rem 1.75rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1.25rem !important;
+}
+
+.txn-form-group {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.45rem !important;
+  margin-bottom: 0 !important;
+}
+
+.txn-form-label {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  font-size: 0.825rem !important;
+  font-weight: 600 !important;
+  color: #cbd5e1 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.txn-account-summary-box {
+  background: #070b14 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 0.85rem 1.15rem !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.summary-left {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.2rem !important;
+}
+
+.summary-acc-num {
+  font-family: var(--font-mono) !important;
+  font-weight: 700 !important;
+  color: #60a5fa !important;
+  font-size: 0.95rem !important;
+}
+
+.summary-acc-owner {
+  font-size: 0.8rem !important;
+  color: #94a3b8 !important;
+}
+
+.summary-right {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  gap: 0.15rem !important;
+}
+
+.summary-label {
+  font-size: 0.7rem !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  font-weight: 700 !important;
+}
+
+.summary-balance-val {
+  font-family: var(--font-mono) !important;
+  font-size: 1.15rem !important;
+  font-weight: 700 !important;
+}
+
+/* Custom Select Dropdown */
+.txn-select-input {
+  width: 100% !important;
+  background-color: #070b14 !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 0.7rem 2.5rem 0.7rem 0.95rem !important;
+  color: #f8fafc !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  outline: none !important;
+  cursor: pointer !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.85rem center !important;
+  background-size: 16px !important;
+  transition: all 0.15s ease !important;
+}
+
+.txn-select-input:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+  background-color: #050811 !important;
+}
+
+.txn-select-input option {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+/* Flexbox Currency Input Container (NO Overlap Possible) */
+.currency-input-container {
+  display: flex !important;
+  align-items: center !important;
+  background-color: #070b14 !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 0 1rem !important;
+  transition: all 0.15s ease !important;
+}
+
+.currency-input-container:focus-within {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+  background-color: #050811 !important;
+}
+
+.currency-prefix-sign {
+  font-family: var(--font-mono) !important;
+  font-size: 1.35rem !important;
+  font-weight: 700 !important;
+  color: #94a3b8 !important;
+  margin-right: 0.75rem !important;
+  user-select: none !important;
+  line-height: 1 !important;
+}
+
+.currency-number-input {
+  flex: 1 !important;
+  width: 100% !important;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  color: #f8fafc !important;
+  font-family: var(--font-mono) !important;
+  font-size: 1.35rem !important;
+  font-weight: 700 !important;
+  padding: 0.75rem 0 !important;
+  line-height: 1.2 !important;
+}
+
+.currency-number-input::placeholder {
+  color: #334155 !important;
+}
+
+/* Hide native number input spinners */
+.currency-number-input::-webkit-outer-spin-button,
+.currency-number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+
+/* Quick Chips Toolbar */
+.quick-chips-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.45rem !important;
+  flex-wrap: nowrap !important;
+  margin-top: 0.55rem !important;
+  overflow-x: auto !important;
+  padding-bottom: 0.15rem !important;
+}
+
+.quick-chips-label {
+  font-size: 0.725rem !important;
+  font-weight: 700 !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  white-space: nowrap !important;
+  margin-right: 0.25rem !important;
+}
+
+.quick-chip-btn {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #cbd5e1 !important;
+  padding: 0.3rem 0.65rem !important;
+  border-radius: var(--radius-sm) !important;
+  font-size: 0.75rem !important;
+  font-family: var(--font-mono) !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: all 0.15s ease !important;
+}
+
+.quick-chip-btn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.15) !important;
+  border-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+.quick-chip-btn:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+
+.quick-chip-btn.chip-max {
+  background: rgba(245, 158, 11, 0.12) !important;
+  color: #fcd34d !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+/* Projected Balance Card */
+.projected-balance-card {
+  border-radius: var(--radius-sm) !important;
+  padding: 0.85rem 1.15rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.projected-balance-card.deposit-projection {
+  background: rgba(16, 185, 129, 0.08) !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+}
+
+.projected-balance-card.withdraw-projection {
+  background: rgba(56, 189, 248, 0.08) !important;
+  border: 1px solid rgba(56, 189, 248, 0.3) !important;
+}
+
+.proj-label {
+  font-size: 0.8rem !important;
+  color: #94a3b8 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.2rem !important;
+}
+
+.proj-val {
+  font-family: var(--font-mono) !important;
+  font-size: 1.25rem !important;
+  font-weight: 800 !important;
+}
+
+/* Remarks Input */
+.txn-text-input {
+  width: 100% !important;
+  background-color: #070b14 !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 0.7rem 0.95rem !important;
+  color: #f8fafc !important;
+  font-size: 0.875rem !important;
+  outline: none !important;
+  transition: all 0.15s ease !important;
+}
+
+.txn-text-input:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+  background-color: #050811 !important;
+}
+
+.txn-text-input::placeholder {
+  color: #64748b !important;
+}
+
+/* Modal Bottom Actions Row */
+.txn-modal-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 0.75rem !important;
+  padding: 1.15rem 1.75rem !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.015) !important;
+}
+
+/* Warning & Error Alerts */
+.insufficient-funds-warning {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+  color: #fca5a5 !important;
+  padding: 0.75rem 1rem !important;
+  border-radius: var(--radius-sm) !important;
+  font-size: 0.8rem !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.6rem !important;
+  line-height: 1.45 !important;
+}
+
+.field-error-banner {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+  color: #fca5a5 !important;
+  padding: 0.75rem 1rem !important;
+  border-radius: var(--radius-sm) !important;
+  font-size: 0.8rem !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.6rem !important;
+}
