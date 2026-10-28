@@ -117,7 +117,10 @@ export async function getCurrentUser() {
  */
 export async function getEmployees() {
   const response = await apiRequest('/employees');
-  return response?.data?.employees || response?.employees || [];
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+  return response?.data?.employees || response?.employees || (Array.isArray(response) ? response : []);
 }
 
 /**

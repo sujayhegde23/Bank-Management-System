@@ -7,33 +7,168 @@ import {
 } from '../services/api';
 import './EmployeeManagement.css';
 
-/**
- * Common phone format validation regex matching backend requirements.
- * 5 to 20 characters containing digits, spaces, hyphens, plus, parentheses, dots.
- */
-const PHONE_REGEX = /^[\d\s+\-().]{5,20}$/;
+/* ==============================================================================
+   Lucide-style Inline SVG Icons (Project-compatible, zero-dependency)
+   ============================================================================== */
 
-/**
- * ==============================================================================
- * Employee Management Component (Admin-Only)
- * ==============================================================================
- * Allows Administrators to:
- * - List all employee records with operational status and credentials metadata
- * - Provision new employee accounts (strictly EMPLOYEE role, salted bcrypt)
- * - Update permitted employee contact information (fullName, email, phone)
- * - Activate / Deactivate employee accounts with instant session revocation
- * ==============================================================================
- */
+function IconUsers({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function IconUserCheck({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <polyline points="16 11 18 13 22 9" />
+    </svg>
+  );
+}
+
+function IconUserX({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <line x1="17" y1="8" x2="22" y2="13" />
+      <line x1="22" y1="8" x2="17" y2="13" />
+    </svg>
+  );
+}
+
+function IconUserPlus({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <line x1="19" y1="8" x2="19" y2="14" />
+      <line x1="22" y1="11" x2="16" y2="11" />
+    </svg>
+  );
+}
+
+function IconSearch({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
+function IconRefresh({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+    </svg>
+  );
+}
+
+function IconEdit({ size = 15, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
+function IconShield({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function IconCheckCircle({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  );
+}
+
+function IconAlertTriangle({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function IconAlertCircle({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  );
+}
+
+function IconX({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function IconEye({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function IconEyeOff({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
+  );
+}
+
+/* ==============================================================================
+   Validation Patterns
+   ============================================================================== */
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^[\d\s+\-().]{5,20}$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9._-]{3,50}$/;
+
 export default function EmployeeManagement({ currentUser }) {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showCreatePanel, setShowCreatePanel] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
 
-  // New employee form state
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, ACTIVE, INACTIVE
+
+  // Toast notification state
+  const [toast, setToast] = useState(null);
+
+  // Add Employee Modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
   const [createForm, setCreateForm] = useState({
     fullName: '',
     email: '',
@@ -41,26 +176,39 @@ export default function EmployeeManagement({ currentUser }) {
     username: '',
     password: ''
   });
+  const [createErrors, setCreateErrors] = useState({});
 
-  // Edit employee modal state
+  // View / Edit Employee Modal
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [editForm, setEditForm] = useState({
     fullName: '',
     email: '',
     phone: ''
   });
+  const [editErrors, setEditErrors] = useState({});
 
-  // Status toggle confirmation dialog
+  // Status Change Confirmation Dialog
   const [statusDialog, setStatusDialog] = useState(null);
 
-  // Lifecycle and accessibility refs
+  // References
   const isMountedRef = useRef(true);
   const activeRequestIdRef = useRef(0);
   const triggerElementRef = useRef(null);
-  const editNameInputRef = useRef(null);
-  const statusConfirmBtnRef = useRef(null);
   const editModalRef = useRef(null);
   const statusModalRef = useRef(null);
+  const addModalRef = useRef(null);
+  const addNameInputRef = useRef(null);
+  const editNameInputRef = useRef(null);
+  const statusConfirmBtnRef = useRef(null);
+
+  // Auto-dismiss toast after 5 seconds
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -70,13 +218,12 @@ export default function EmployeeManagement({ currentUser }) {
   }, []);
 
   /**
-   * Fetch employee list from backend API.
-   * Handles component cleanup, request racing, and error propagation.
+   * Fetch employees list from backend API
    */
   const loadEmployees = useCallback(async () => {
     const requestId = ++activeRequestIdRef.current;
     setLoading(true);
-    setError(null);
+    setFetchError(null);
 
     try {
       const list = await getEmployees();
@@ -87,7 +234,7 @@ export default function EmployeeManagement({ currentUser }) {
       return list;
     } catch (err) {
       if (isMountedRef.current && requestId === activeRequestIdRef.current) {
-        setError(err.message || 'Failed to load employees list.');
+        setFetchError(err.message || 'Unable to connect to employee database service.');
       }
       throw err;
     } finally {
@@ -97,16 +244,13 @@ export default function EmployeeManagement({ currentUser }) {
     }
   }, []);
 
-  // Initial data load when mounted for an Admin user
+  // Initial load
   useEffect(() => {
     let ignore = false;
     if (currentUser?.role === 'ADMIN') {
-      // Defer to microtask to prevent synchronous setState within effect body
       Promise.resolve().then(() => {
         if (!ignore && isMountedRef.current) {
-          loadEmployees().catch(() => {
-            // Error is captured in component state by loadEmployees
-          });
+          loadEmployees().catch(() => {});
         }
       });
     }
@@ -115,7 +259,7 @@ export default function EmployeeManagement({ currentUser }) {
     };
   }, [currentUser, loadEmployees]);
 
-  // Derived metrics
+  // Derived statistics
   const stats = useMemo(() => {
     const total = employees.length;
     const active = employees.filter((e) => e.status === 'ACTIVE').length;
@@ -123,55 +267,90 @@ export default function EmployeeManagement({ currentUser }) {
     return { total, active, inactive };
   }, [employees]);
 
-  // Filtered employees list
+  // Filtered employees
   const filteredEmployees = useMemo(() => {
-    if (!searchQuery.trim()) return employees;
-    const q = searchQuery.toLowerCase().trim();
-    return employees.filter(
-      (e) =>
-        e.fullName?.toLowerCase().includes(q) ||
-        e.username?.toLowerCase().includes(q) ||
-        e.email?.toLowerCase().includes(q) ||
-        e.phone?.toLowerCase().includes(q)
-    );
-  }, [employees, searchQuery]);
+    return employees.filter((emp) => {
+      // Status filter
+      if (statusFilter === 'ACTIVE' && emp.status !== 'ACTIVE') return false;
+      if (statusFilter === 'INACTIVE' && emp.status !== 'INACTIVE') return false;
 
-  // Handle new employee form input
-  const handleCreateInputChange = (field, value) => {
-    setCreateForm((prev) => ({ ...prev, [field]: value }));
+      // Search query filter
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      const idMatch = String(emp.employeeId).includes(q) || ('#' + emp.employeeId).includes(q);
+      const nameMatch = emp.fullName?.toLowerCase().includes(q);
+      const usernameMatch = emp.username?.toLowerCase().includes(q);
+      const emailMatch = emp.email?.toLowerCase().includes(q);
+      const phoneMatch = emp.phone?.toLowerCase().includes(q);
+
+      return idMatch || nameMatch || usernameMatch || emailMatch || phoneMatch;
+    });
+  }, [employees, statusFilter, searchQuery]);
+
+  // Handle open Add Employee modal
+  const handleOpenAddModal = (e) => {
+    triggerElementRef.current = e?.currentTarget || document.activeElement;
+    setCreateForm({
+      fullName: '',
+      email: '',
+      phone: '',
+      username: '',
+      password: ''
+    });
+    setCreateErrors({});
+    setShowCreatePassword(false);
+    setShowAddModal(true);
   };
 
-  // Submit create employee
+  const handleCloseAddModal = useCallback(() => {
+    setShowAddModal(false);
+    setCreateErrors({});
+    setTimeout(() => {
+      triggerElementRef.current?.focus();
+    }, 0);
+  }, []);
+
+  // Validate Add Employee form
+  const validateCreateForm = () => {
+    const errors = {};
+    if (!createForm.fullName.trim()) {
+      errors.fullName = 'Full legal name is required.';
+    } else if (createForm.fullName.trim().length > 100) {
+      errors.fullName = 'Name cannot exceed 100 characters.';
+    }
+
+    if (!createForm.email.trim()) {
+      errors.email = 'Email address is required.';
+    } else if (!EMAIL_REGEX.test(createForm.email.trim()) || createForm.email.trim().length > 100) {
+      errors.email = 'Please provide a valid corporate email address.';
+    }
+
+    if (!createForm.phone.trim()) {
+      errors.phone = 'Phone number is required.';
+    } else if (!PHONE_REGEX.test(createForm.phone.trim())) {
+      errors.phone = 'Phone must be 5-20 characters with valid digits and symbols.';
+    }
+
+    if (!createForm.username.trim()) {
+      errors.username = 'Username is required.';
+    } else if (!USERNAME_REGEX.test(createForm.username.trim())) {
+      errors.username = 'Username must be 3-50 characters (letters, numbers, dots, hyphens).';
+    }
+
+    if (!createForm.password) {
+      errors.password = 'Initial password is required.';
+    } else if (createForm.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters long.';
+    }
+
+    setCreateErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Submit Add Employee
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
-
-    // Client-side validations conforming to backend & database constraints
-    if (!createForm.fullName.trim()) {
-      setError('Employee full name is required.');
-      return;
-    }
-    if (!createForm.email.trim() || !/\S+@\S+\.\S+/.test(createForm.email.trim())) {
-      setError('A valid employee email address is required.');
-      return;
-    }
-    if (!createForm.phone.trim()) {
-      setError('Employee phone number is required.');
-      return;
-    }
-    if (!PHONE_REGEX.test(createForm.phone.trim())) {
-      setError('Phone number must be between 5 and 20 characters and contain valid digits/symbols.');
-      return;
-    }
-    if (!createForm.username.trim() || createForm.username.trim().length < 3) {
-      setError('Username must be at least 3 characters.');
-      return;
-    }
-    if (!createForm.password || createForm.password.length < 8) {
-      setError('Initial password must be at least 8 characters long.');
-      return;
-    }
+    if (!validateCreateForm()) return;
 
     setActionLoading(true);
     let created = null;
@@ -185,38 +364,41 @@ export default function EmployeeManagement({ currentUser }) {
         password: createForm.password
       });
 
-      setCreateForm({
-        fullName: '',
-        email: '',
-        phone: '',
-        username: '',
-        password: ''
-      });
+      handleCloseAddModal();
     } catch (err) {
       if (err.code === 'VAL_002') {
-        setError(`Username "${createForm.username}" is already taken. Please choose another username.`);
+        setCreateErrors((prev) => ({
+          ...prev,
+          username: `Username "${createForm.username.trim().toLowerCase()}" is already taken.`
+        }));
       } else {
-        setError(err.message || 'Failed to create employee account.');
+        setCreateErrors((prev) => ({
+          ...prev,
+          general: err.message || 'Failed to provision employee account.'
+        }));
       }
       setActionLoading(false);
       return;
     }
 
-    // Provisioning succeeded: refresh listing and provide clear mutation feedback
+    // Refresh employee list
     try {
       await loadEmployees();
-      setSuccess(`Employee account for "${created.fullName}" (username: ${created.username}) created successfully.`);
+      setToast({
+        type: 'success',
+        message: `Employee account for "${created.fullName}" provisioned successfully.`
+      });
     } catch (refreshErr) {
-      setError(null);
-      setSuccess(
-        `Employee account for "${created.fullName}" was created successfully, but refreshing the employee list failed (${refreshErr.message || 'network error'}). Please click "↻ Refresh List".`
-      );
+      setToast({
+        type: 'warning',
+        message: `Employee "${created.fullName}" created, but list refresh failed (${refreshErr.message || 'network error'}). Please click Refresh.`
+      });
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Open edit modal and track triggering element for focus return
+  // Open Edit Modal
   const handleOpenEdit = (emp, e) => {
     triggerElementRef.current = e?.currentTarget || document.activeElement;
     setEditingEmployee(emp);
@@ -225,42 +407,46 @@ export default function EmployeeManagement({ currentUser }) {
       email: emp.email || '',
       phone: emp.phone || ''
     });
-    setError(null);
+    setEditErrors({});
   };
 
-  // Close edit modal and restore focus
   const handleCloseEdit = useCallback(() => {
     setEditingEmployee(null);
-    setEditForm({ fullName: '', email: '', phone: '' });
+    setEditErrors({});
     setTimeout(() => {
       triggerElementRef.current?.focus();
     }, 0);
   }, []);
 
-  // Save edit changes
+  // Validate Edit form
+  const validateEditForm = () => {
+    const errors = {};
+    if (!editForm.fullName.trim()) {
+      errors.fullName = 'Full name cannot be empty.';
+    } else if (editForm.fullName.trim().length > 100) {
+      errors.fullName = 'Name cannot exceed 100 characters.';
+    }
+
+    if (!editForm.email.trim()) {
+      errors.email = 'Email address cannot be empty.';
+    } else if (!EMAIL_REGEX.test(editForm.email.trim()) || editForm.email.trim().length > 100) {
+      errors.email = 'Please provide a valid email address.';
+    }
+
+    if (!editForm.phone.trim()) {
+      errors.phone = 'Phone number cannot be empty.';
+    } else if (!PHONE_REGEX.test(editForm.phone.trim())) {
+      errors.phone = 'Phone must be 5-20 characters with valid digits and symbols.';
+    }
+
+    setEditErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Submit Edit form
   const handleSaveEdit = async (e) => {
     e.preventDefault();
-    if (!editingEmployee) return;
-
-    setError(null);
-    setSuccess(null);
-
-    if (!editForm.fullName.trim()) {
-      setError('Full name cannot be empty.');
-      return;
-    }
-    if (!editForm.email.trim() || !/\S+@\S+\.\S+/.test(editForm.email.trim())) {
-      setError('Please provide a valid email address.');
-      return;
-    }
-    if (!editForm.phone.trim()) {
-      setError('Phone number cannot be empty.');
-      return;
-    }
-    if (!PHONE_REGEX.test(editForm.phone.trim())) {
-      setError('Phone number must be between 5 and 20 characters and contain valid digits/symbols.');
-      return;
-    }
+    if (!editingEmployee || !validateEditForm()) return;
 
     setActionLoading(true);
     let updated = null;
@@ -273,36 +459,39 @@ export default function EmployeeManagement({ currentUser }) {
       });
       handleCloseEdit();
     } catch (err) {
-      setError(err.message || 'Failed to update employee details.');
+      setEditErrors((prev) => ({
+        ...prev,
+        general: err.message || 'Failed to update employee details.'
+      }));
       setActionLoading(false);
       return;
     }
 
-    // Profile update succeeded: refresh list and provide clear mutation feedback
     try {
       await loadEmployees();
-      setSuccess(`Employee profile "${updated.fullName}" updated successfully.`);
+      setToast({
+        type: 'success',
+        message: `Profile for "${updated.fullName || editForm.fullName}" updated successfully.`
+      });
     } catch (refreshErr) {
-      setError(null);
-      setSuccess(
-        `Employee profile "${updated.fullName}" was updated successfully, but refreshing the employee list failed (${refreshErr.message || 'network error'}). Please click "↻ Refresh List".`
-      );
+      setToast({
+        type: 'warning',
+        message: `Profile updated, but list refresh failed (${refreshErr.message || 'network error'}).`
+      });
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Open status confirmation dialog and track triggering element for focus return
+  // Open Status Dialog
   const handleOpenStatusDialog = (emp, targetStatus, e) => {
     triggerElementRef.current = e?.currentTarget || document.activeElement;
     setStatusDialog({
       employee: emp,
       nextStatus: targetStatus
     });
-    setError(null);
   };
 
-  // Close status dialog and restore focus
   const handleCloseStatusDialog = useCallback(() => {
     setStatusDialog(null);
     setTimeout(() => {
@@ -310,85 +499,85 @@ export default function EmployeeManagement({ currentUser }) {
     }, 0);
   }, []);
 
-  // Confirm status toggle
+  // Confirm Status Change
   const handleConfirmStatusChange = async () => {
     if (!statusDialog) return;
     const { employee, nextStatus } = statusDialog;
     const actionWord = nextStatus === 'ACTIVE' ? 'activated' : 'deactivated';
 
-    setError(null);
-    setSuccess(null);
     setActionLoading(true);
 
     try {
       await updateEmployeeStatus(employee.employeeId, nextStatus);
       handleCloseStatusDialog();
     } catch (err) {
-      setError(err.message || 'Failed to update employee account status.');
+      setToast({
+        type: 'error',
+        message: err.message || `Failed to ${actionWord} employee account.`
+      });
       setActionLoading(false);
       return;
     }
 
-    // Status toggle succeeded: refresh list and provide clear mutation feedback
     try {
       await loadEmployees();
-      setSuccess(`Employee account for "${employee.fullName}" has been ${actionWord}.`);
+      setToast({
+        type: 'success',
+        message: `Account for "${employee.fullName}" has been successfully ${actionWord}.`
+      });
     } catch (refreshErr) {
-      setError(null);
-      setSuccess(
-        `Employee account for "${employee.fullName}" was ${actionWord}, but refreshing the employee list failed (${refreshErr.message || 'network error'}). Please click "↻ Refresh List".`
-      );
+      setToast({
+        type: 'warning',
+        message: `Status changed to ${nextStatus}, but list refresh failed (${refreshErr.message || 'network error'}).`
+      });
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Keyboard accessibility: Escape key listener for open modals
+  // Focus and keyboard accessibility
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        if (editingEmployee && !actionLoading) {
-          handleCloseEdit();
-        } else if (statusDialog && !actionLoading) {
-          handleCloseStatusDialog();
-        }
+      if (e.key === 'Escape' && !actionLoading) {
+        if (showAddModal) handleCloseAddModal();
+        else if (editingEmployee) handleCloseEdit();
+        else if (statusDialog) handleCloseStatusDialog();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editingEmployee, statusDialog, actionLoading, handleCloseEdit, handleCloseStatusDialog]);
+  }, [showAddModal, editingEmployee, statusDialog, actionLoading, handleCloseAddModal, handleCloseEdit, handleCloseStatusDialog]);
 
-  // Focus management: initial focus on modal open
   useEffect(() => {
-    if (editingEmployee) {
-      editNameInputRef.current?.focus();
-    }
+    if (showAddModal) addNameInputRef.current?.focus();
+  }, [showAddModal]);
+
+  useEffect(() => {
+    if (editingEmployee) editNameInputRef.current?.focus();
   }, [editingEmployee]);
 
   useEffect(() => {
-    if (statusDialog) {
-      statusConfirmBtnRef.current?.focus();
-    }
+    if (statusDialog) statusConfirmBtnRef.current?.focus();
   }, [statusDialog]);
 
-  // Focus trap inside active modal dialog
+  // Dialog tab-trap helper
   const handleDialogKeyDown = (e, modalRef) => {
     if (e.key !== 'Tab' || !modalRef.current) return;
-    const focusableElements = modalRef.current.querySelectorAll(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    const focusable = modalRef.current.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     );
-    if (!focusableElements.length) return;
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
 
     if (e.shiftKey) {
-      if (document.activeElement === firstElement) {
-        lastElement.focus();
+      if (document.activeElement === first) {
+        last.focus();
         e.preventDefault();
       }
     } else {
-      if (document.activeElement === lastElement) {
-        firstElement.focus();
+      if (document.activeElement === last) {
+        first.focus();
         e.preventDefault();
       }
     }
@@ -399,343 +588,519 @@ export default function EmployeeManagement({ currentUser }) {
   }
 
   return (
-    <section className="emp-management-section" id="employee-management-panel" aria-label="Employee Account and Access Management">
-      {/* Header */}
-      <div className="emp-header">
-        <div className="emp-header-left">
-          <h2>
-            Employee Account & Access Management
-            <span className="badge badge-danger">ADMIN ONLY</span>
-          </h2>
-          <p>
-            Provision bank staff credentials, update authorized profiles, and manage operational access.
+    <div className="emp-mgmt-root">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`toast-container toast-${toast.type}`} role="alert">
+          <div className="toast-icon">
+            {toast.type === 'success' && <IconCheckCircle size={18} />}
+            {toast.type === 'warning' && <IconAlertTriangle size={18} />}
+            {toast.type === 'error' && <IconAlertCircle size={18} />}
+          </div>
+          <div className="toast-body">{toast.message}</div>
+          <button
+            type="button"
+            className="toast-close-btn"
+            onClick={() => setToast(null)}
+            aria-label="Dismiss alert"
+          >
+            <IconX size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Page Header */}
+      <div className="emp-page-header">
+        <div>
+          <h1 className="emp-page-title">Employee Management</h1>
+          <p className="emp-page-subtitle">
+            Manage employee accounts, access permissions, and account status.
           </p>
         </div>
-        <div className="emp-header-actions">
-          <button
-            id="emp-toggle-create-btn"
-            className="btn-primary"
-            onClick={() => setShowCreatePanel(!showCreatePanel)}
-          >
-            {showCreatePanel ? 'Hide Provisioning Form' : '+ Provision New Employee'}
-          </button>
+        <div className="emp-page-actions">
           <button
             id="emp-refresh-btn"
-            className="btn-secondary"
+            className="btn-secondary-custom"
             onClick={() => loadEmployees().catch(() => {})}
             disabled={loading}
+            title="Refresh employee list"
           >
-            {loading ? 'Refreshing...' : '↻ Refresh List'}
+            <IconRefresh size={15} className={loading ? 'spin-icon' : ''} />
+            <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+          <button
+            id="emp-add-btn"
+            className="btn-primary-custom"
+            onClick={handleOpenAddModal}
+          >
+            <IconUserPlus size={16} />
+            <span>+ Add Employee</span>
           </button>
         </div>
       </div>
 
-      {/* Summary Metrics Bar */}
-      <div className="emp-stats-bar">
-        <div className="emp-stat-card">
-          <span className="stat-label">Total Staff</span>
-          <span className="stat-value">{stats.total}</span>
-        </div>
-        <div className="emp-stat-card stat-active">
-          <span className="stat-label">Active Staff</span>
-          <span className="stat-value">{stats.active}</span>
-        </div>
-        <div className="emp-stat-card stat-inactive">
-          <span className="stat-label">Deactivated Staff</span>
-          <span className="stat-value">{stats.inactive}</span>
-        </div>
-      </div>
-
-      {/* Feedback Banners */}
-      {error && (
-        <div className="auth-error-banner" id="emp-error-banner" role="alert" style={{ marginBottom: '1.5rem' }}>
-          <span>⚠️</span>
-          <span style={{ flex: 1 }}>{error}</span>
-          <button
-            type="button"
-            className="modal-close-btn"
-            onClick={() => setError(null)}
-            aria-label="Dismiss error"
-          >
-            &times;
-          </button>
-        </div>
-      )}
-
-      {success && !error && (
-        <div
-          className="auth-error-banner"
-          id="emp-success-banner"
-          role="status"
-          style={{
-            marginBottom: '1.5rem',
-            background: 'var(--success-bg)',
-            borderColor: 'rgba(16, 185, 129, 0.3)',
-            color: '#6ee7b7'
-          }}
-        >
-          <span>✓</span>
-          <span style={{ flex: 1 }}>{success}</span>
-          <button
-            type="button"
-            className="modal-close-btn"
-            onClick={() => setSuccess(null)}
-            aria-label="Dismiss success message"
-          >
-            &times;
-          </button>
-        </div>
-      )}
-
-      {/* Provisioning Form Card */}
-      {showCreatePanel && (
-        <div className="emp-create-panel" id="emp-create-panel">
-          <h3>
-            <span>👤</span>
-            <span>Provision New Employee Account</span>
-          </h3>
-          <p className="panel-subtitle">
-            Creates an atomic linked record in <code>users</code> and <code>employees</code> tables within a single database transaction.
-          </p>
-
-          <div className="emp-form-info-callout">
-            🔒 <strong>Strict RBAC Enforcement:</strong> Accounts created here are automatically assigned the{' '}
-            <code>EMPLOYEE</code> role and <code>ACTIVE</code> status. Callers cannot choose privileged roles, and passwords are salted and hashed with bcrypt (cost 10).
+      {/* Summary Cards */}
+      <div className="emp-stats-grid">
+        <div className="emp-stat-card card-total">
+          <div className="stat-icon-wrapper total-icon">
+            <IconUsers size={22} />
           </div>
-
-          <form onSubmit={handleCreateSubmit} id="create-employee-form">
-            <div className="emp-create-grid">
-              <div className="form-group">
-                <label className="form-label" htmlFor="new-emp-name">Full Legal Name *</label>
-                <input
-                  id="new-emp-name"
-                  className="form-input"
-                  type="text"
-                  placeholder="e.g. Eleanor Vance"
-                  value={createForm.fullName}
-                  onChange={(e) => handleCreateInputChange('fullName', e.target.value)}
-                  disabled={actionLoading}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="new-emp-email">Email Address *</label>
-                <input
-                  id="new-emp-email"
-                  className="form-input"
-                  type="email"
-                  placeholder="e.g. eleanor.vance@bank.com"
-                  value={createForm.email}
-                  onChange={(e) => handleCreateInputChange('email', e.target.value)}
-                  disabled={actionLoading}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="new-emp-phone">Phone Number *</label>
-                <input
-                  id="new-emp-phone"
-                  className="form-input"
-                  type="tel"
-                  placeholder="e.g. +1-555-0144"
-                  value={createForm.phone}
-                  onChange={(e) => handleCreateInputChange('phone', e.target.value)}
-                  disabled={actionLoading}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="new-emp-username">Username *</label>
-                <input
-                  id="new-emp-username"
-                  className="form-input"
-                  type="text"
-                  placeholder="e.g. eleanor.vance"
-                  value={createForm.username}
-                  onChange={(e) => handleCreateInputChange('username', e.target.value)}
-                  autoComplete="off"
-                  disabled={actionLoading}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="new-emp-password">Initial Password *</label>
-                <input
-                  id="new-emp-password"
-                  className="form-input"
-                  type="password"
-                  placeholder="Min 8 characters"
-                  value={createForm.password}
-                  onChange={(e) => handleCreateInputChange('password', e.target.value)}
-                  autoComplete="new-password"
-                  disabled={actionLoading}
-                  required
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() =>
-                  setCreateForm({
-                    fullName: '',
-                    email: '',
-                    phone: '',
-                    username: '',
-                    password: ''
-                  })
-                }
-                disabled={actionLoading}
-              >
-                Clear
-              </button>
-              <button
-                id="create-employee-submit-btn"
-                type="submit"
-                className="btn-primary"
-                disabled={actionLoading}
-              >
-                {actionLoading ? 'Provisioning...' : 'Provision Employee Account'}
-              </button>
-            </div>
-          </form>
+          <div className="stat-details">
+            <span className="stat-label">Total Staff</span>
+            <span className="stat-value">{stats.total}</span>
+            <span className="stat-desc">All registered personnel</span>
+          </div>
         </div>
-      )}
 
-      {/* Toolbar: Search and Counters */}
-      <div className="emp-toolbar">
-        <div className="emp-search-input-wrapper">
-          <span className="emp-search-icon">🔍</span>
+        <div className="emp-stat-card card-active">
+          <div className="stat-icon-wrapper active-icon">
+            <IconUserCheck size={22} />
+          </div>
+          <div className="stat-details">
+            <span className="stat-label">Active Staff</span>
+            <span className="stat-value text-success">{stats.active}</span>
+            <span className="stat-desc">Operational portal access</span>
+          </div>
+        </div>
+
+        <div className="emp-stat-card card-inactive">
+          <div className="stat-icon-wrapper inactive-icon">
+            <IconUserX size={22} />
+          </div>
+          <div className="stat-details">
+            <span className="stat-label">Inactive Staff</span>
+            <span className="stat-value text-danger">{stats.inactive}</span>
+            <span className="stat-desc">Access temporarily revoked</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Toolbar: Search and Filter Pills */}
+      <div className="emp-filter-toolbar">
+        <div className="search-box-wrapper">
+          <span className="search-icon-inside">
+            <IconSearch size={16} />
+          </span>
           <input
             id="emp-search-input"
-            className="emp-search-input"
-            type="search"
-            placeholder="Search by name, username, email, or phone..."
+            type="text"
+            className="search-input-field"
+            placeholder="Search by name, username, email, phone, or ID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+          {searchQuery && (
+            <button
+              type="button"
+              className="search-clear-btn"
+              onClick={() => setSearchQuery('')}
+              aria-label="Clear search"
+            >
+              <IconX size={14} />
+            </button>
+          )}
         </div>
-        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          Showing <strong>{filteredEmployees.length}</strong> of <strong>{employees.length}</strong> employees
+
+        <div className="filter-group">
+          <span className="filter-label">Status:</span>
+          <div className="filter-pills">
+            <button
+              type="button"
+              className={`pill-btn ${statusFilter === 'ALL' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('ALL')}
+            >
+              All ({employees.length})
+            </button>
+            <button
+              type="button"
+              className={`pill-btn ${statusFilter === 'ACTIVE' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('ACTIVE')}
+            >
+              Active ({stats.active})
+            </button>
+            <button
+              type="button"
+              className={`pill-btn ${statusFilter === 'INACTIVE' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('INACTIVE')}
+            >
+              Inactive ({stats.inactive})
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Employees Table */}
-      <div className="emp-table-container">
-        {loading && employees.length === 0 ? (
-          <div className="emp-empty-state">
-            <div className="emp-empty-icon">⏳</div>
-            <p>Loading employee records from secure backend...</p>
+      {/* Main Table Card */}
+      <div className="emp-table-card">
+        {/* Error State */}
+        {fetchError && (
+          <div className="emp-table-error" role="alert">
+            <IconAlertCircle size={28} className="error-icon" />
+            <div className="error-content">
+              <h4>Failed to load employee records</h4>
+              <p>{fetchError}</p>
+            </div>
+            <button
+              type="button"
+              className="btn-retry"
+              onClick={() => loadEmployees().catch(() => {})}
+            >
+              Retry Connection
+            </button>
           </div>
-        ) : filteredEmployees.length === 0 ? (
-          <div className="emp-empty-state">
-            <div className="emp-empty-icon">📂</div>
-            <p>No employee records found matching your query.</p>
+        )}
+
+        {/* Loading Skeleton */}
+        {loading && !fetchError && (
+          <div className="emp-table-skeleton">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="skeleton-row">
+                <div className="skeleton-cell skeleton-id" />
+                <div className="skeleton-cell skeleton-name" />
+                <div className="skeleton-cell skeleton-user" />
+                <div className="skeleton-cell skeleton-contact" />
+                <div className="skeleton-cell skeleton-status" />
+                <div className="skeleton-cell skeleton-action" />
+              </div>
+            ))}
           </div>
-        ) : (
-          <table className="emp-table" id="emp-data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Staff Member</th>
-                <th>Username</th>
-                <th>Contact</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEmployees.map((emp) => {
-                const isActive = emp.status === 'ACTIVE';
-                return (
-                  <tr key={emp.employeeId} id={`emp-row-${emp.employeeId}`}>
-                    <td>
-                      <code style={{ color: 'var(--text-muted)' }}>#{emp.employeeId}</code>
-                    </td>
-                    <td>
-                      <div className="emp-name-cell">{emp.fullName}</div>
-                      <div className="emp-email-sub">{emp.email}</div>
-                    </td>
-                    <td>
-                      <code style={{ color: '#93c5fd' }}>{emp.username}</code>
-                    </td>
-                    <td>
-                      <span style={{ fontSize: '0.85rem', color: emp.phone ? 'var(--text-main)' : 'var(--text-subtle)' }}>
-                        {emp.phone || '—'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>
-                        {emp.role}
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        className={`badge ${isActive ? 'badge-success' : 'badge-danger'}`}
-                        id={`emp-status-badge-${emp.employeeId}`}
-                      >
-                        {emp.status}
-                      </span>
-                    </td>
-                    <td>
-                      <span style={{ fontSize: '0.785rem', color: 'var(--text-subtle)' }}>
-                        {emp.createdAt ? new Date(emp.createdAt).toLocaleDateString() : '—'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="emp-actions-cell" style={{ justifyContent: 'flex-end' }}>
-                        <button
-                          id={`edit-emp-btn-${emp.employeeId}`}
-                          className="btn-sm btn-action-edit"
-                          onClick={(e) => handleOpenEdit(emp, e)}
-                          disabled={actionLoading}
-                          title="Edit permitted profile fields"
+        )}
+
+        {/* Empty State: No Employees at all */}
+        {!loading && !fetchError && employees.length === 0 && (
+          <div className="emp-table-empty">
+            <div className="empty-icon-circle">
+              <IconUsers size={32} />
+            </div>
+            <h3>No employee accounts found</h3>
+            <p>Get started by provisioning the first bank employee record.</p>
+            <button
+              type="button"
+              className="btn-primary-custom"
+              onClick={handleOpenAddModal}
+            >
+              <IconUserPlus size={16} />
+              <span>Provision First Employee</span>
+            </button>
+          </div>
+        )}
+
+        {/* Empty State: Search/Filter returned 0 */}
+        {!loading && !fetchError && employees.length > 0 && filteredEmployees.length === 0 && (
+          <div className="emp-table-empty">
+            <div className="empty-icon-circle">
+              <IconSearch size={32} />
+            </div>
+            <h3>No matching employees</h3>
+            <p>No staff records matched your search query or status filter.</p>
+            <button
+              type="button"
+              className="btn-secondary-custom"
+              onClick={() => {
+                setSearchQuery('');
+                setStatusFilter('ALL');
+              }}
+            >
+              Clear Filters
+            </button>
+          </div>
+        )}
+
+        {/* Real Data Table */}
+        {!loading && !fetchError && filteredEmployees.length > 0 && (
+          <div className="table-responsive-wrapper">
+            <table className="emp-table-custom" id="emp-data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '80px' }}>ID</th>
+                  <th>Staff Member</th>
+                  <th>Username</th>
+                  <th>Phone</th>
+                  <th>Role</th>
+                  <th>Account Status</th>
+                  <th style={{ textAlign: 'right', width: '210px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEmployees.map((emp) => {
+                  const isActive = emp.status === 'ACTIVE';
+                  return (
+                    <tr key={emp.employeeId} id={`emp-row-${emp.employeeId}`}>
+                      <td>
+                        <span className="emp-id-badge">#{emp.employeeId}</span>
+                      </td>
+                      <td>
+                        <div className="emp-name-box">
+                          <span className="emp-name-text">{emp.fullName}</span>
+                          <span className="emp-email-text">{emp.email}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <code className="emp-username-tag">{emp.username}</code>
+                      </td>
+                      <td>
+                        <span className="emp-phone-text">{emp.phone || '—'}</span>
+                      </td>
+                      <td>
+                        <span className="badge-role">
+                          <IconShield size={12} />
+                          <span>{emp.role}</span>
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`badge-status ${isActive ? 'status-active' : 'status-inactive'}`}
+                          id={`emp-status-badge-${emp.employeeId}`}
                         >
-                          ✎ Edit
-                        </button>
-                        {isActive ? (
+                          <span className="status-dot" />
+                          <span>{emp.status}</span>
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="emp-action-buttons">
                           <button
-                            id={`deactivate-emp-btn-${emp.employeeId}`}
-                            className="btn-sm btn-action-deactivate"
-                            onClick={(e) => handleOpenStatusDialog(emp, 'INACTIVE', e)}
+                            id={`edit-emp-btn-${emp.employeeId}`}
+                            type="button"
+                            className="btn-action btn-edit"
+                            onClick={(e) => handleOpenEdit(emp, e)}
                             disabled={actionLoading}
-                            title="Deactivate employee access"
+                            title="View and edit employee details"
                           >
-                            ⊘ Deactivate
+                            <IconEdit size={14} />
+                            <span>View / Edit</span>
                           </button>
-                        ) : (
-                          <button
-                            id={`activate-emp-btn-${emp.employeeId}`}
-                            className="btn-sm btn-action-activate"
-                            onClick={(e) => handleOpenStatusDialog(emp, 'ACTIVE', e)}
-                            disabled={actionLoading}
-                            title="Activate employee access"
-                          >
-                            ✓ Activate
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          {isActive ? (
+                            <button
+                              id={`deactivate-emp-btn-${emp.employeeId}`}
+                              type="button"
+                              className="btn-action btn-deactivate"
+                              onClick={(e) => handleOpenStatusDialog(emp, 'INACTIVE', e)}
+                              disabled={actionLoading}
+                              title="Deactivate employee access"
+                            >
+                              <IconUserX size={14} />
+                              <span>Deactivate</span>
+                            </button>
+                          ) : (
+                            <button
+                              id={`activate-emp-btn-${emp.employeeId}`}
+                              type="button"
+                              className="btn-action btn-activate"
+                              onClick={(e) => handleOpenStatusDialog(emp, 'ACTIVE', e)}
+                              disabled={actionLoading}
+                              title="Reactivate employee access"
+                            >
+                              <IconUserCheck size={14} />
+                              <span>Activate</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* Edit Employee Modal */}
+      {/* ==============================================================================
+          ADD EMPLOYEE MODAL
+          ============================================================================== */}
+      {showAddModal && (
+        <div
+          className="custom-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !actionLoading) {
+              handleCloseAddModal();
+            }
+          }}
+        >
+          <div
+            ref={addModalRef}
+            className="custom-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-modal-title"
+            onKeyDown={(e) => handleDialogKeyDown(e, addModalRef)}
+          >
+            <div className="custom-modal-header">
+              <div className="modal-title-group">
+                <div className="modal-icon-badge">
+                  <IconUserPlus size={18} />
+                </div>
+                <div>
+                  <h3 id="add-modal-title">Provision New Employee</h3>
+                  <p className="modal-header-desc">
+                    Create credentials and profile linked to the MySQL database.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="modal-close-icon"
+                onClick={handleCloseAddModal}
+                disabled={actionLoading}
+                aria-label="Close modal"
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateSubmit} noValidate>
+              <div className="custom-modal-body">
+                {createErrors.general && (
+                  <div className="form-general-error" role="alert">
+                    <IconAlertCircle size={16} />
+                    <span>{createErrors.general}</span>
+                  </div>
+                )}
+
+                <div className="form-field-group">
+                  <label className="field-label" htmlFor="new-emp-name">
+                    Full Legal Name <span className="required-star">*</span>
+                  </label>
+                  <input
+                    ref={addNameInputRef}
+                    id="new-emp-name"
+                    type="text"
+                    className={`field-input ${createErrors.fullName ? 'has-error' : ''}`}
+                    placeholder="e.g. Rachel Sterling"
+                    value={createForm.fullName}
+                    onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })}
+                    disabled={actionLoading}
+                  />
+                  {createErrors.fullName && (
+                    <span className="field-error-msg">{createErrors.fullName}</span>
+                  )}
+                </div>
+
+                <div className="form-grid-two">
+                  <div className="form-field-group">
+                    <label className="field-label" htmlFor="new-emp-email">
+                      Corporate Email <span className="required-star">*</span>
+                    </label>
+                    <input
+                      id="new-emp-email"
+                      type="email"
+                      className={`field-input ${createErrors.email ? 'has-error' : ''}`}
+                      placeholder="rachel.sterling@bank.com"
+                      value={createForm.email}
+                      onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                      disabled={actionLoading}
+                    />
+                    {createErrors.email && (
+                      <span className="field-error-msg">{createErrors.email}</span>
+                    )}
+                  </div>
+
+                  <div className="form-field-group">
+                    <label className="field-label" htmlFor="new-emp-phone">
+                      Phone Number <span className="required-star">*</span>
+                    </label>
+                    <input
+                      id="new-emp-phone"
+                      type="tel"
+                      className={`field-input ${createErrors.phone ? 'has-error' : ''}`}
+                      placeholder="555-0145"
+                      value={createForm.phone}
+                      onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
+                      disabled={actionLoading}
+                    />
+                    {createErrors.phone && (
+                      <span className="field-error-msg">{createErrors.phone}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="form-grid-two">
+                  <div className="form-field-group">
+                    <label className="field-label" htmlFor="new-emp-username">
+                      Username <span className="required-star">*</span>
+                    </label>
+                    <input
+                      id="new-emp-username"
+                      type="text"
+                      className={`field-input ${createErrors.username ? 'has-error' : ''}`}
+                      placeholder="rachel.sterling"
+                      value={createForm.username}
+                      onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })}
+                      disabled={actionLoading}
+                      autoComplete="off"
+                    />
+                    {createErrors.username && (
+                      <span className="field-error-msg">{createErrors.username}</span>
+                    )}
+                  </div>
+
+                  <div className="form-field-group">
+                    <label className="field-label" htmlFor="new-emp-password">
+                      Initial Password <span className="required-star">*</span>
+                    </label>
+                    <div className="password-input-wrapper">
+                      <input
+                        id="new-emp-password"
+                        type={showCreatePassword ? 'text' : 'password'}
+                        className={`field-input with-toggle ${createErrors.password ? 'has-error' : ''}`}
+                        placeholder="Minimum 8 characters"
+                        value={createForm.password}
+                        onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                        disabled={actionLoading}
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle-btn"
+                        onClick={() => setShowCreatePassword(!showCreatePassword)}
+                        tabIndex="-1"
+                        aria-label={showCreatePassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showCreatePassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                      </button>
+                    </div>
+                    {createErrors.password && (
+                      <span className="field-error-msg">{createErrors.password}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="security-info-box">
+                  <IconShield size={16} className="shield-icon" />
+                  <div className="security-text">
+                    <strong>Security Standard:</strong> Salted bcrypt hashing (cost factor 10) is applied before storage. Role is strictly assigned as <code>EMPLOYEE</code> with <code>ACTIVE</code> status.
+                  </div>
+                </div>
+              </div>
+
+              <div className="custom-modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary-custom"
+                  onClick={handleCloseAddModal}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  id="create-employee-submit-btn"
+                  type="submit"
+                  className="btn-primary-custom"
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Provisioning Account...' : 'Provision Employee'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==============================================================================
+          VIEW / EDIT EMPLOYEE MODAL
+          ============================================================================== */}
       {editingEmployee && (
         <div
-          className="modal-backdrop"
+          className="custom-modal-backdrop"
           onClick={(e) => {
             if (e.target === e.currentTarget && !actionLoading) {
               handleCloseEdit();
@@ -744,90 +1109,135 @@ export default function EmployeeManagement({ currentUser }) {
         >
           <div
             ref={editModalRef}
-            className="modal-dialog"
+            className="custom-modal-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="edit-dialog-title"
-            aria-describedby="edit-dialog-desc"
+            aria-labelledby="edit-modal-title"
             onKeyDown={(e) => handleDialogKeyDown(e, editModalRef)}
           >
-            <div className="modal-header">
-              <h3 id="edit-dialog-title">Edit Employee Details</h3>
+            <div className="custom-modal-header">
+              <div className="modal-title-group">
+                <div className="modal-icon-badge">
+                  <IconEdit size={18} />
+                </div>
+                <div>
+                  <h3 id="edit-modal-title">Employee Profile &amp; Details</h3>
+                  <p className="modal-header-desc">
+                    Staff ID #{editingEmployee.employeeId} &bull; {editingEmployee.username}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
-                className="modal-close-btn"
+                className="modal-close-icon"
                 onClick={handleCloseEdit}
-                aria-label="Close dialog"
                 disabled={actionLoading}
+                aria-label="Close modal"
               >
-                &times;
+                <IconX size={18} />
               </button>
             </div>
-            <form onSubmit={handleSaveEdit}>
-              <div className="modal-body">
-                {/* Protected fields notice */}
-                <div
-                  id="edit-dialog-desc"
-                  className="emp-form-info-callout"
-                  style={{ marginBottom: '1.25rem', fontSize: '0.78rem' }}
-                >
-                  🛡️ <strong>Security Safeguard:</strong> Protected fields (<code>username</code>,{' '}
-                  <code>role</code>, <code>password</code>, <code>user_id</code>) are immutable via this interface and will be rejected by the backend if submitted.
-                </div>
 
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label className="form-label" htmlFor="edit-username-readonly">Username (Immutable)</label>
-                  <div className="readonly-box" id="edit-username-readonly">
-                    {editingEmployee.username} (User ID: {editingEmployee.userId})
+            <form onSubmit={handleSaveEdit} noValidate>
+              <div className="custom-modal-body">
+                {editErrors.general && (
+                  <div className="form-general-error" role="alert">
+                    <IconAlertCircle size={16} />
+                    <span>{editErrors.general}</span>
+                  </div>
+                )}
+
+                {/* Read-Only Identity Card */}
+                <div className="identity-summary-card">
+                  <div className="identity-row">
+                    <div className="identity-item">
+                      <span className="identity-label">Staff ID</span>
+                      <span className="identity-value">#{editingEmployee.employeeId}</span>
+                    </div>
+                    <div className="identity-item">
+                      <span className="identity-label">System User ID</span>
+                      <span className="identity-value">#{editingEmployee.userId}</span>
+                    </div>
+                    <div className="identity-item">
+                      <span className="identity-label">Assigned Role</span>
+                      <span className="identity-value badge-role">
+                        <IconShield size={12} />
+                        {editingEmployee.role}
+                      </span>
+                    </div>
+                    <div className="identity-item">
+                      <span className="identity-label">Current Status</span>
+                      <span className={`badge-status ${editingEmployee.status === 'ACTIVE' ? 'status-active' : 'status-inactive'}`}>
+                        <span className="status-dot" />
+                        {editingEmployee.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="identity-note">
+                    🔒 System identity identifiers and roles are immutable to uphold database referential integrity.
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label className="form-label" htmlFor="edit-emp-name">Full Name *</label>
+                {/* Editable Profile Inputs */}
+                <div className="form-field-group">
+                  <label className="field-label" htmlFor="edit-emp-name">
+                    Full Legal Name <span className="required-star">*</span>
+                  </label>
                   <input
                     ref={editNameInputRef}
                     id="edit-emp-name"
-                    className="form-input"
                     type="text"
+                    className={`field-input ${editErrors.fullName ? 'has-error' : ''}`}
                     value={editForm.fullName}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, fullName: e.target.value }))}
+                    onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
                     disabled={actionLoading}
-                    required
                   />
+                  {editErrors.fullName && (
+                    <span className="field-error-msg">{editErrors.fullName}</span>
+                  )}
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label className="form-label" htmlFor="edit-emp-email">Email Address *</label>
-                  <input
-                    id="edit-emp-email"
-                    className="form-input"
-                    type="email"
-                    value={editForm.email}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
-                    disabled={actionLoading}
-                    required
-                  />
-                </div>
+                <div className="form-grid-two">
+                  <div className="form-field-group">
+                    <label className="field-label" htmlFor="edit-emp-email">
+                      Email Address <span className="required-star">*</span>
+                    </label>
+                    <input
+                      id="edit-emp-email"
+                      type="email"
+                      className={`field-input ${editErrors.email ? 'has-error' : ''}`}
+                      value={editForm.email}
+                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                      disabled={actionLoading}
+                    />
+                    {editErrors.email && (
+                      <span className="field-error-msg">{editErrors.email}</span>
+                    )}
+                  </div>
 
-                <div className="form-group">
-                  <label className="form-label" htmlFor="edit-emp-phone">Phone Number *</label>
-                  <input
-                    id="edit-emp-phone"
-                    className="form-input"
-                    type="tel"
-                    placeholder="e.g. +1-555-0144"
-                    value={editForm.phone}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
-                    disabled={actionLoading}
-                    required
-                  />
+                  <div className="form-field-group">
+                    <label className="field-label" htmlFor="edit-emp-phone">
+                      Phone Number <span className="required-star">*</span>
+                    </label>
+                    <input
+                      id="edit-emp-phone"
+                      type="tel"
+                      className={`field-input ${editErrors.phone ? 'has-error' : ''}`}
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      disabled={actionLoading}
+                    />
+                    {editErrors.phone && (
+                      <span className="field-error-msg">{editErrors.phone}</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="modal-actions">
+              <div className="custom-modal-footer">
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="btn-secondary-custom"
                   onClick={handleCloseEdit}
                   disabled={actionLoading}
                 >
@@ -836,10 +1246,10 @@ export default function EmployeeManagement({ currentUser }) {
                 <button
                   id="save-employee-edit-btn"
                   type="submit"
-                  className="btn-primary"
+                  className="btn-primary-custom"
                   disabled={actionLoading}
                 >
-                  {actionLoading ? 'Saving...' : 'Save Changes'}
+                  {actionLoading ? 'Saving Changes...' : 'Save Profile Changes'}
                 </button>
               </div>
             </form>
@@ -847,10 +1257,12 @@ export default function EmployeeManagement({ currentUser }) {
         </div>
       )}
 
-      {/* Status Toggle Confirmation Modal */}
+      {/* ==============================================================================
+          STATUS CHANGE CONFIRMATION DIALOG (ACTIVATE / DEACTIVATE)
+          ============================================================================== */}
       {statusDialog && (
         <div
-          className="modal-backdrop"
+          className="custom-modal-backdrop"
           onClick={(e) => {
             if (e.target === e.currentTarget && !actionLoading) {
               handleCloseStatusDialog();
@@ -859,64 +1271,75 @@ export default function EmployeeManagement({ currentUser }) {
         >
           <div
             ref={statusModalRef}
-            className="modal-dialog"
+            className="custom-modal-dialog confirmation-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="status-dialog-title"
-            aria-describedby="status-dialog-desc"
             onKeyDown={(e) => handleDialogKeyDown(e, statusModalRef)}
           >
-            <div className="modal-header">
-              <h3 id="status-dialog-title">
-                {statusDialog.nextStatus === 'ACTIVE'
-                  ? 'Reactivate Employee Account'
-                  : 'Deactivate Employee Account'}
-              </h3>
+            <div className="custom-modal-header">
+              <div className="modal-title-group">
+                <div className={`modal-icon-badge ${statusDialog.nextStatus === 'ACTIVE' ? 'badge-icon-success' : 'badge-icon-danger'}`}>
+                  {statusDialog.nextStatus === 'ACTIVE' ? (
+                    <IconUserCheck size={20} />
+                  ) : (
+                    <IconAlertTriangle size={20} />
+                  )}
+                </div>
+                <div>
+                  <h3 id="status-dialog-title">
+                    {statusDialog.nextStatus === 'ACTIVE'
+                      ? 'Reactivate Employee Account'
+                      : 'Deactivate Employee Account'}
+                  </h3>
+                  <p className="modal-header-desc">
+                    Staff ID #{statusDialog.employee.employeeId} &bull; {statusDialog.employee.fullName}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
-                className="modal-close-btn"
+                className="modal-close-icon"
                 onClick={handleCloseStatusDialog}
-                aria-label="Close dialog"
                 disabled={actionLoading}
+                aria-label="Close modal"
               >
-                &times;
+                <IconX size={18} />
               </button>
             </div>
-            <div className="modal-body" id="status-dialog-desc">
+
+            <div className="custom-modal-body">
               {statusDialog.nextStatus === 'INACTIVE' ? (
-                <div style={{ color: 'var(--text-main)', fontSize: '0.9rem', lineHeight: 1.6 }}>
-                  <p style={{ marginBottom: '0.75rem' }}>
-                    Are you sure you want to deactivate employee{' '}
+                <div>
+                  <p className="dialog-main-text">
+                    Are you sure you want to deactivate the employee account for{' '}
                     <strong>{statusDialog.employee.fullName}</strong> (<code>{statusDialog.employee.username}</code>)?
                   </p>
-                  <div
-                    className="emp-form-info-callout"
-                    style={{
-                      borderLeftColor: 'var(--danger)',
-                      background: 'var(--danger-bg)',
-                      color: '#fca5a5'
-                    }}
-                  >
-                    ⚠️ <strong>Immediate Session Invalidation:</strong> Deactivation updates{' '}
-                    <code>users.status = &apos;INACTIVE&apos;</code>. The employee will be immediately denied access on their next request, and their active session cookie will be invalidated.
+                  <div className="deactivation-warning-callout">
+                    <IconAlertTriangle size={18} className="warning-callout-icon" />
+                    <div className="warning-callout-text">
+                      <strong>Immediate Session Invalidation:</strong> Deactivation immediately marks{' '}
+                      <code>users.status = 'INACTIVE'</code> in the database. The employee will be rejected from logging in, and any active session will be invalidated on their next request.
+                    </div>
                   </div>
                 </div>
               ) : (
-                <div style={{ color: 'var(--text-main)', fontSize: '0.9rem', lineHeight: 1.6 }}>
-                  <p>
+                <div>
+                  <p className="dialog-main-text">
                     Reactivate employee account for{' '}
                     <strong>{statusDialog.employee.fullName}</strong> (<code>{statusDialog.employee.username}</code>)?
                   </p>
-                  <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>
-                    The employee will be able to sign in and perform employee-authorized operations again.
+                  <p className="dialog-sub-text">
+                    The account status will be restored to <code>ACTIVE</code>. The staff member will immediately be able to authenticate and access banking operations.
                   </p>
                 </div>
               )}
             </div>
-            <div className="modal-actions">
+
+            <div className="custom-modal-footer">
               <button
                 type="button"
-                className="btn-secondary"
+                className="btn-secondary-custom"
                 onClick={handleCloseStatusDialog}
                 disabled={actionLoading}
               >
@@ -926,21 +1349,20 @@ export default function EmployeeManagement({ currentUser }) {
                 ref={statusConfirmBtnRef}
                 id="confirm-status-toggle-btn"
                 type="button"
-                className={statusDialog.nextStatus === 'ACTIVE' ? 'btn-primary' : 'btn-sm btn-action-deactivate'}
-                style={statusDialog.nextStatus !== 'ACTIVE' ? { padding: '0.6rem 1.25rem', fontSize: '0.875rem' } : {}}
+                className={statusDialog.nextStatus === 'ACTIVE' ? 'btn-primary-custom' : 'btn-danger-custom'}
                 onClick={handleConfirmStatusChange}
                 disabled={actionLoading}
               >
                 {actionLoading
-                  ? 'Updating...'
+                  ? 'Updating Status...'
                   : statusDialog.nextStatus === 'ACTIVE'
-                  ? 'Confirm Activation'
+                  ? 'Confirm Reactivation'
                   : 'Confirm Deactivation'}
               </button>
             </div>
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }
