@@ -480,11 +480,318 @@ async function getAccountTransactions({ accountId, user, page = 1, size = 20 }) 
   };
 }
 
+
+/**
+ * Execute an atomic customer fund transfer between two bank accounts (FR-15, FR-16, FR-17, Issue #9).
+ *
+ * Transaction flow:
+ * 1. Validate monetary amount (NFR-04, TXN_002).
+ * 2. Pre-verify source and destination IDs are distinct (TXN_002).
+ * 3. Open MySQL InnoDB transaction boundary with `withTransaction` (NFR-09).
+ * 4. Resolve destination account ID if passed as account number.
+ * 5. Deadlock-free row-level locking: Acquire exclusive X-locks (SELECT ... FOR UPDATE)
+ *    in strictly increasing numerical order of account_id (AC-4, NFR-17).
+ * 6. Verify source and destination accounts exist (ACC_002).
+ * 7. Enforce customer ownership on source account: session customer must own source (AC-1, NFR-03).
+ * 8. Verify operational status of both source and destination accounts is 'ACTIVE' (FR-11, ACC_001).
+ * 9. Verify sufficient source balance: reject overdrafts with TXN_001 (FR-14, FR-16).
+ * 10. Atomic debit on sender account: UPDATE accounts SET balance = balance - ? (FR-17).
+ * 11. Atomic credit on recipient account: UPDATE accounts SET balance = balance + ? (FR-17).
+ * 12. Generate collision-resistant transaction reference TXN-TRF-... (FR-18).
+ * 13. Insert immutable ledger record into `bank_transactions` (FR-19, NFR-10).
+ * 14. Commit transaction and return updated state with customer isolation (AC-2, NFR-03).
+ *
+ * Concurrency & Deadlock Strategy:
+ * When locking multiple rows, sorting account IDs ascending ensures that two concurrent transfers
+ * between the same pair of accounts (A -> B and B -> A) lock accounts in identical order (min(A,B) then max(A,B)),
+ * mathematically preventing circular wait deadlocks.
+ *
+ * @param {object} params
+ * @param {number} params.sourceAccountId - Source internal account ID
+ * @param {number|string} [params.destinationAccountId] - Destination internal account ID or account number
+ * @param {string} [params.destinationAccountNumber] - Optional explicit destination account number
+ * @param {number|string} params.amount - Transfer amount
+ * @param {string} [params.remarks] - Optional transfer memo
+ * @param {number} params.performedByUserId - User ID of executing customer/user
+ * @param {number} [params.sessionCustomerId] - Verified customer ID from authenticated session
+ * @param {string} [params._testFailurePoint] - Test hook to simulate failure at various stages (TC-10)
+ * @returns {Promise<object>} Created transfer transaction details
+ */
+async function executeTransfer({
+  sourceAccountId,
+  destinationAccountId,
+  destinationAccountNumber,
+  amount,
+  remarks = null,
+  performedByUserId,
+  sessionCustomerId,
+  _testFailurePoint = null
+}) {
+  // 1. Validate monetary amount (NFR-04, TXN_002)
+  const normalizedAmount = validateMonetaryAmount(amount);
+
+  // 2. Validate source account ID parameter
+  const srcId = Number(sourceAccountId);
+  if (!Number.isSafeInteger(srcId) || srcId <= 0) {
+    const error = new Error('Invalid source account ID');
+    error.statusCode = 400;
+    error.code = 'VAL_001';
+    error.safeMessage = 'Invalid source account ID';
+    throw error;
+  }
+
+  // Determine raw destination target
+  const rawDest = destinationAccountId !== undefined && destinationAccountId !== null && destinationAccountId !== ''
+    ? destinationAccountId
+    : destinationAccountNumber;
+
+  if (rawDest === undefined || rawDest === null || String(rawDest).trim() === '') {
+    const error = new Error('Destination account is required');
+    error.statusCode = 400;
+    error.code = 'VAL_001';
+    error.safeMessage = 'Destination account is required';
+    throw error;
+  }
+
+  return await withTransaction(async (conn) => {
+    // 3. Resolve destination account ID if passed as account number or string
+    let resolvedDestId = null;
+    const destStr = String(rawDest).trim();
+
+    // If destination is purely numeric digits, try direct ID lookup first
+    if (/^[1-9]\d*$/.test(destStr)) {
+      const candidateId = Number(destStr);
+      const [idCheck] = await conn.execute(
+        'SELECT account_id FROM accounts WHERE account_id = ? LIMIT 1',
+        [candidateId]
+      );
+      if (idCheck && idCheck.length > 0) {
+        resolvedDestId = candidateId;
+      }
+    }
+
+    // If not found by ID or if destination is an account number string (e.g. ACC-T2)
+    if (!resolvedDestId) {
+      const [numCheck] = await conn.execute(
+        'SELECT account_id FROM accounts WHERE account_number = ? LIMIT 1',
+        [destStr]
+      );
+      if (numCheck && numCheck.length > 0) {
+        resolvedDestId = numCheck[0].account_id;
+      }
+    }
+
+    // If destination account does not exist (AC-2, ACC_002 404)
+    if (!resolvedDestId) {
+      const error = new Error('Destination account not found');
+      error.statusCode = 404;
+      error.code = 'ACC_002';
+      error.safeMessage = 'Destination account not found';
+      throw error;
+    }
+
+    // 4. Verify source and destination are different accounts (AC-2, TXN_002 400)
+    if (srcId === resolvedDestId) {
+      const error = new Error('Source and destination accounts must be different');
+      error.statusCode = 400;
+      error.code = 'TXN_002';
+      error.safeMessage = 'Source and destination accounts must be different';
+      throw error;
+    }
+
+    // 5. Deadlock-free row-level exclusive locking (AC-4, NFR-17)
+    // Acquire locks in consistent numerical order of account_id
+    const [firstLockId, secondLockId] = [srcId, resolvedDestId].sort((a, b) => a - b);
+
+    const [rows1] = await conn.execute(
+      `SELECT account_id, account_number, customer_id, account_type, balance, status
+       FROM accounts
+       WHERE account_id = ?
+       FOR UPDATE`,
+      [firstLockId]
+    );
+
+    const [rows2] = await conn.execute(
+      `SELECT account_id, account_number, customer_id, account_type, balance, status
+       FROM accounts
+       WHERE account_id = ?
+       FOR UPDATE`,
+      [secondLockId]
+    );
+
+    // Map locked account records
+    const allLocked = [...(rows1 || []), ...(rows2 || [])];
+    const sourceAccount = allLocked.find((a) => a.account_id === srcId);
+    const destAccount = allLocked.find((a) => a.account_id === resolvedDestId);
+
+    if (!sourceAccount) {
+      const error = new Error('Source account not found');
+      error.statusCode = 404;
+      error.code = 'ACC_002';
+      error.safeMessage = 'Source account not found';
+      throw error;
+    }
+
+    if (!destAccount) {
+      const error = new Error('Destination account not found');
+      error.statusCode = 404;
+      error.code = 'ACC_002';
+      error.safeMessage = 'Destination account not found';
+      throw error;
+    }
+
+    // 6. Customer ownership authorization check (AC-1, NFR-03)
+    if (sessionCustomerId !== undefined && sessionCustomerId !== null) {
+      if (Number(sourceAccount.customer_id) !== Number(sessionCustomerId)) {
+        const error = new Error('You are not authorized to transfer from this account');
+        error.statusCode = 403;
+        error.code = 'AUTH_002';
+        error.safeMessage = 'You are not authorized to perform this operation';
+        throw error;
+      }
+    }
+
+    // 7. Source account status check (AC-2, FR-11, TC-08)
+    if (sourceAccount.status !== 'ACTIVE') {
+      const error = new Error('Source account is frozen or inactive');
+      error.statusCode = 409;
+      error.code = 'ACC_001';
+      error.safeMessage = 'Source account is frozen or inactive';
+      error.accountStatus = sourceAccount.status;
+      throw error;
+    }
+
+    // 8. Destination account status check (AC-2, FR-11, TC-08)
+    if (destAccount.status !== 'ACTIVE') {
+      const error = new Error('Destination account is frozen or inactive');
+      error.statusCode = 409;
+      error.code = 'ACC_001';
+      error.safeMessage = 'Destination account is frozen or inactive';
+      error.accountStatus = destAccount.status;
+      throw error;
+    }
+
+    // 9. Available balance and overdraft check (AC-3, FR-14, FR-16, TC-06)
+    const currentSrcBal = Number(sourceAccount.balance);
+    const transferAmt = Number(normalizedAmount);
+
+    if (currentSrcBal < transferAmt) {
+      const error = new Error('Insufficient balance');
+      error.statusCode = 422;
+      error.code = 'TXN_001';
+      error.safeMessage = 'Insufficient balance';
+      error.currentBalance = currentSrcBal;
+      error.requestedAmount = transferAmt;
+      throw error;
+    }
+
+    // 10. Atomic debit on sender account (AC-4, FR-17)
+    const [debitResult] = await conn.execute(
+      'UPDATE accounts SET balance = balance - ? WHERE account_id = ? AND balance >= ?',
+      [normalizedAmount, srcId, normalizedAmount]
+    );
+
+    if (debitResult.affectedRows !== 1) {
+      const error = new Error('Insufficient balance');
+      error.statusCode = 422;
+      error.code = 'TXN_001';
+      error.safeMessage = 'Insufficient balance';
+      throw error;
+    }
+
+    // Optional test hook for TC-10: Force failure after sender debit
+    if (_testFailurePoint === 'AFTER_DEBIT') {
+      const simError = new Error('Simulated failure after sender debit (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 11. Atomic credit on recipient account (AC-4, FR-17)
+    const [creditResult] = await conn.execute(
+      'UPDATE accounts SET balance = balance + ? WHERE account_id = ?',
+      [normalizedAmount, resolvedDestId]
+    );
+
+    if (creditResult.affectedRows !== 1) {
+      const error = new Error('Failed to credit destination account');
+      error.statusCode = 500;
+      error.code = 'TXN_003';
+      error.safeMessage = 'Transaction failed. No money was moved.';
+      throw error;
+    }
+
+    // Optional test hook for TC-10: Force failure after recipient credit
+    if (_testFailurePoint === 'AFTER_CREDIT') {
+      const simError = new Error('Simulated failure after recipient credit (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 12. Generate unique cryptographic transaction reference (FR-18)
+    const transactionRef = await generateUniqueTransactionRef('TRANSFER', conn);
+
+    // Optional test hook for TC-10: Force failure immediately before ledger insert
+    if (_testFailurePoint === 'BEFORE_LEDGER_INSERT') {
+      const simError = new Error('Simulated failure before ledger insert (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 13. Insert unmodifiable transaction ledger entry (AC-5, FR-19, NFR-10)
+    const safeRemarks = remarks ? String(remarks).trim().substring(0, 255) : 'Customer fund transfer';
+    const [insertResult] = await conn.execute(
+      `INSERT INTO bank_transactions
+        (transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks)
+       VALUES (?, 'TRANSFER', ?, ?, ?, ?, ?)`,
+      [transactionRef, normalizedAmount, srcId, resolvedDestId, performedByUserId, safeRemarks]
+    );
+
+    // Optional test hook for TC-10: Force failure after ledger insert
+    if (_testFailurePoint === 'AFTER_LEDGER_INSERT') {
+      const simError = new Error('Simulated failure after ledger insert (TC-10)');
+      simError.statusCode = 500;
+      simError.code = 'TXN_003';
+      simError.safeMessage = 'Transaction failed. No money was moved.';
+      throw simError;
+    }
+
+    // 14. Query final source account balance
+    const [balanceRows] = await conn.execute(
+      'SELECT balance FROM accounts WHERE account_id = ?',
+      [srcId]
+    );
+    const sourceBalanceAfter = balanceRows && balanceRows.length > 0
+      ? Number(balanceRows[0].balance)
+      : currentSrcBal - transferAmt;
+
+    return {
+      transactionId: insertResult.insertId,
+      transactionRef,
+      transactionReference: transactionRef,
+      type: 'TRANSFER',
+      sourceAccountId: sourceAccount.account_id,
+      sourceAccountNumber: sourceAccount.account_number,
+      destinationAccountId: destAccount.account_id,
+      destinationAccountNumber: destAccount.account_number,
+      amount: Number(normalizedAmount),
+      sourceBalanceAfter,
+      timestamp: new Date().toISOString()
+    };
+  });
+}
+
 module.exports = {
   validateMonetaryAmount,
   generateUniqueTransactionRef,
   executeDeposit,
   executeWithdrawal,
   getAccountTransactions,
+  executeTransfer,
   TRANSACTION_TYPE_PREFIXES
 };

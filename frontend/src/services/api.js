@@ -329,3 +329,23 @@ export async function getRecentTransactions(params = {}) {
   const response = await apiRequest(endpoint);
   return response?.data || response;
 }
+
+/**
+ * ==============================================================================
+ * Customer Fund Transfer API (Issue #9)
+ * ==============================================================================
+ */
+
+/**
+ * Transfer funds between bank accounts (FR-15, FR-16, FR-17, AC-1, AC-4).
+ * Initiated by authenticated customer from an account they own.
+ * @param {{ sourceAccountId: number|string, destinationAccountId?: number|string, destinationAccountNumber?: string, amount: number|string, remarks?: string }} data
+ * @returns {Promise<any>}
+ */
+export async function transferFunds(data) {
+  const response = await apiRequest('/transfers', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  return response?.data || response;
+}

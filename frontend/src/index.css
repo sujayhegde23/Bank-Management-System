@@ -82,3 +82,22 @@ a:hover {
 code, pre {
   font-family: var(--font-mono);
 }
+
+/* Global Form Controls Baseline (Prevents Browser Default White Inputs) */
+input, select, textarea {
+  background-color: #0b0f19;
+  color: var(--text-main);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
