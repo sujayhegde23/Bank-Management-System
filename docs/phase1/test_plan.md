@@ -461,10 +461,10 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Objective | Verify that a Bank Employee can register a new customer and that the customer receives a unique customer ID. |
 | Preconditions | Logged in as `test.employee1`. |
 | Test Steps | 1. Open **Register Customer**. 2. Enter all mandatory details. 3. Click **Submit**. 4. Search for the new customer. 5. Repeat steps 1–3 with a second customer. |
-| Test Data / Input | Name: `Test Customer Three`; Date of birth: `01-01-2000`; Phone: `9000000003`; E-mail: `test3@example.com`; Address: `Test Address 3` (dummy data), and a second similar dummy customer |
+| Test Data / Input | Name: `Test Customer Three`; Date of birth: `2000-01-01`; Phone: `9000000003`; E-mail: `test3@example.com`; Address: `Test Address 3`; Username: `test.customer3`; Password: `Password123!` |
 | Expected Result | A success message shows a new customer ID. The customer can be found by search with the entered details. The two new customers have different customer IDs. |
-| Actual Result | Feature scheduled for Sprint 2 (Customer Service & registration UI). Underlying database schema table `customers` and primary key / constraints verified via REV-03. |
-| Status | Pending Implementation |
+| Actual Result | Executed on 2026-10-29 via automated integration test suite (`tests/customers.test.js`, Scenarios 1–10) and React UI (`CustomerManagement.jsx`). Authorized employees and administrators can register customers with mandatory details (`fullName`, `dateOfBirth`, `phone`, `email`, `address`, `username`, `password`), creating linked `users` and `customers` records atomically with bcrypt hashing (cost 10) and returning a unique customer ID. Rejects duplicates, unauthenticated/customer attempts (403 `AUTH_002`), invalid formats (400 `VAL_001`), and privilege escalation. |
+| Status | Passed |
 
 ### TC-05 — Successful Deposit
 
@@ -734,9 +734,9 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Preconditions | Customer C1 exists. |
 | Test Steps | 1. As `test.customer1`, update phone and address in **Update Profile**. 2. As `test.customer1`, try to change the name field (by editing the request if the field is not shown). 3. As `test.employee1`, search for C1 and view the details. 4. As `test.employee1`, update C1's name. 5. As `test.admin1`, view C1's record. |
 | Test Data / Input | Phone: `9000000099`; Address: `Updated Test Address`; Name: `Test Customer One Updated` |
-| Expected Result | Step 1 succeeds. Step 2 is rejected (`AUTH_002`) or the name is ignored, and the name is unchanged. Step 3 shows the updated phone and address. Step 4 succeeds. Step 5 shows all updated values. |
-| Actual Result | Feature scheduled for Sprint 2 (Customer Profile and Employee Customer Management). |
-| Status | Pending Implementation |
+| Expected Result | Step 1 succeeds. Step 2 is rejected (`AUTH_002`) and the name is unchanged. Step 3 shows the updated phone and address. Step 4 succeeds. Step 5 shows all updated values. |
+| Actual Result | Executed on 2026-10-29 via automated integration test suite (`tests/customers.test.js`, Scenarios 11–20) and React UI (`CustomerManagement.jsx` and `App.jsx` Profile modal). Employees and Administrators can search and view all customer profiles (`GET /api/customers`, `GET /api/customers/:id`) and update any profile field (`fullName`, `dateOfBirth`, `phone`, `email`, `address`). Customers can view their own profile and are strictly restricted to updating contact details (`phone`, `email`, `address`); customer attempts to alter `fullName` or `dateOfBirth` are rejected with HTTP 403 `AUTH_002`, and cross-customer profile modifications/views return HTTP 403 `AUTH_002`. |
+| Status | Passed |
 
 ### TC-21 — Role-Specific Navigation
 
@@ -762,7 +762,7 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | TC-01 | Valid User Login | Functional, Security | High | **Passed** | Verified 2026-10-22 via `auth.test.js` Scenario 1 & browser test. Session cookie established. |
 | TC-02 | Invalid User Login | Negative, Security | High | **Passed** | Verified 2026-10-22 via `auth.test.js` Scenarios 2, 3, 4, 5. Constant-time dummy hash prevents enumeration. |
 | TC-03 | Role-Based Access Control | Security | High | **Pending Implementation (Middleware Verified)** | `requireRole` middleware verified via `auth.test.js` Scenarios 8, 9 (HTTP 403 `AUTH_002`). Full page URLs pending Sprint 2. |
-| TC-04 | Register Customer | Functional | High | **Pending Implementation** | Customer Service scheduled for Sprint 2. DB schema verified via REV-03. |
+| TC-04 | Register Customer | Functional | High | **Passed** | Verified 2026-10-29 via `tests/customers.test.js` Scenarios 1–10 & React `CustomerManagement.jsx`. Atomic user/customer creation, bcrypt hash, duplicate rejection. |
 | TC-05 | Successful Deposit | Functional | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 1. Balance increases by exact deposit amount, `DEPOSIT` ledger record inserted. |
 | TC-06 | Withdrawal with Insufficient Balance | Negative | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 3. Overdraft rejected with HTTP 422 `TXN_001`, balance unchanged. |
 | TC-07 | Successful Fund Transfer | Functional, Integration | High | **Pending Implementation** | Multi-account transfer transaction scheduled for Sprint 2. |
@@ -778,7 +778,7 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | TC-17 | Change Password | Functional, Security | Medium | **Pending Implementation** | Password change endpoint and UI scheduled for Sprint 2. Bcrypt hashing verified under TC-09. |
 | TC-18 | Create and Deactivate Employee Account | Functional, Security | Medium | **Passed** | Verified 2026-10-28 via `tests/auth.test.js` and employee management dashboard. Admin management UI and session revocation active. |
 | TC-19 | View Transaction Records and Generate Report | Functional | Medium | **Pending Implementation** | Reporting and admin records view scheduled for Sprint 2. |
-| TC-20 | View and Update Customer Information | Functional | Medium | **Pending Implementation** | Customer profile and employee management scheduled for Sprint 2. |
+| TC-20 | View and Update Customer Information | Functional | Medium | **Passed** | Verified 2026-10-29 via `tests/customers.test.js` Scenarios 11–20 & React UI. Directory search, ID lookup, role-based field restrictions (A-06) enforced. |
 | TC-21 | Role-Specific Navigation | Usability | Medium | **Passed** | Role-based navigation for Admin and Employee active in sidebar navigation and role badges. |
 
 **Totals & Status Breakdown:**
@@ -805,9 +805,9 @@ Verification types: **T** = Test execution, **I** = Inspection or review,
 | FR-01 | Login with valid credentials | TC-01, TC-02 | T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenarios 1–5 & browser test) |
 | FR-02 | Secure logout | TC-13 | T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenarios 6, 7 & browser test) |
 | FR-03 | Role-based access levels | TC-01, TC-03 | T | **Passed (Auth & Middleware)** / Pending Implementation (Page routes pending Sprint 2) |
-| FR-04 | Register customer | TC-04 | T | **Pending Implementation** (Scheduled for Sprint 2; DB schema verified via REV-03) |
-| FR-05 | View customer details | TC-20 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-06 | Update permitted customer information | TC-20 | T | **Pending Implementation** (Scheduled for Sprint 2) |
+| FR-04 | Register customer | TC-04 | T | **Passed** (Verified 2026-10-29 via `tests/customers.test.js` Scenarios 1-10 & React `CustomerManagement.jsx`) |
+| FR-05 | View customer details | TC-20 | T | **Passed** (Verified 2026-10-29 via `tests/customers.test.js` Scenarios 11-14 & React `CustomerManagement.jsx`) |
+| FR-06 | Update permitted customer information | TC-20 | T | **Passed** (Verified 2026-10-29 via `tests/customers.test.js` Scenarios 15-20 & React `CustomerManagement.jsx` / Profile Modal) |
 | FR-07 | Create bank account | TC-14 | T | **Pending Implementation** (Scheduled for Sprint 2) |
 | FR-08 | Unique account number | TC-14 | T | **Passed (Schema Constraint)** / Pending Implementation (Generator pending Sprint 2) |
 | FR-09 | View account details and balance | TC-16 | T | **Pending Implementation** (Scheduled for Sprint 2) |
@@ -835,7 +835,7 @@ Verification types: **T** = Test execution, **I** = Inspection or review,
 | NFR-01 | Passwords stored as salted hashes | TC-09, TC-17 | I, T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenario 12 & DB inspection) |
 | NFR-02 | Role-based feature restriction | TC-03, TC-18, TC-20 | T | **Passed (Middleware)** / Pending Implementation (Full UI pending Sprint 2) |
 | NFR-03 | Prevent unauthorized data access | TC-02, TC-03, TC-16 | T | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenario 7 & `tests/accounts.test.js`; horizontal customer data isolation) |
-| NFR-04 | Input validation | TC-12 | T | **Passed (Auth Input)** / Pending Implementation (Transaction inputs pending Sprint 2) |
+| NFR-04 | Input validation | TC-12 | T | **Passed** (Verified 2026-10-29 across auth, accounts, transactions, transfers, and customer registration/profile validation in `tests/customers.test.js`) |
 | NFR-05 | Authentication before sensitive operations | TC-01, TC-03, TC-13 | T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenarios 6, 7, 10) |
 | NFR-06 | Response time ≤ 3 s (95%) | TC-11 | T | **Not Executed** (Planned for load testing phase under target volume) |
 | NFR-07 | Transaction time ≤ 5 s (95%) | TC-11 | T | **Not Executed** (Planned for load testing phase under target volume) |

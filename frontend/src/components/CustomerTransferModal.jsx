@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { transferFunds } from '../services/api';
 import './CustomerTransferModal.css';
 
@@ -193,9 +194,8 @@ export default function CustomerTransferModal({
     }
   };
 
-  return (
-    <div
-      className="transfer-modal-overlay"
+  return createPortal(
+    <div className="transfer-modal-overlay"
       role="dialog"
       aria-modal="true"
       aria-labelledby="transfer-modal-title"
@@ -483,6 +483,7 @@ export default function CustomerTransferModal({
           </form>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

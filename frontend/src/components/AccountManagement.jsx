@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   getAccounts,
   getAccount,
@@ -1053,7 +1054,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
       {/* ========================================================================
           CREATE ACCOUNT MODAL (FR-07, FR-08)
           ======================================================================== */}
-      {showCreateModal && (
+      {showCreateModal && createPortal(
         <div
           className="modal-overlay"
           role="dialog"
@@ -1171,13 +1172,14 @@ export default function AccountManagement({ currentUser, initialAction = null, o
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ========================================================================
           VIEW ACCOUNT DETAILS MODAL (FR-09)
           ======================================================================== */}
-      {viewingAccount && (
+      {viewingAccount && createPortal(
         <div
           className="modal-overlay"
           role="dialog"
@@ -1446,7 +1448,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
       {/* ========================================================================
           STATUS CHANGE CONFIRMATION DIALOG (FR-10, FR-11)
           ======================================================================== */}
-      {statusDialog && (
+      {statusDialog && createPortal(
         <div
           className="modal-overlay"
           role="dialog"
@@ -1558,12 +1560,13 @@ export default function AccountManagement({ currentUser, initialAction = null, o
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       {/* ========================================================================
           DEPOSIT CASH MODAL (FR-12, FR-18, FR-19, TC-05)
           ======================================================================== */}
-      {depositDialog && (
+      {depositDialog && createPortal(
         <div
           className="modal-overlay"
           role="dialog"
@@ -1752,13 +1755,14 @@ export default function AccountManagement({ currentUser, initialAction = null, o
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ========================================================================
           WITHDRAW CASH MODAL (FR-13, FR-14, FR-18, FR-19, TC-06, TC-15)
           ======================================================================== */}
-      {withdrawDialog && (
+      {withdrawDialog && createPortal(
         <div
           className="modal-overlay"
           role="dialog"
@@ -1976,7 +1980,8 @@ export default function AccountManagement({ currentUser, initialAction = null, o
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
