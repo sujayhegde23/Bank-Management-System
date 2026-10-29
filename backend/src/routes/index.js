@@ -14,6 +14,7 @@ const employeesRouter = require('./employees');
 const accountsRouter = require('./accounts');
 const customersRouter = require('./customers');
 const transactionsRouter = require('./transactions');
+const transfersRouter = require('./transfers');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
 // Root API information endpoint
@@ -24,7 +25,7 @@ router.get('/', (req, res) => {
       name: 'Bank Management System API',
       version: '1.0.0',
       description: 'REST API backend for Customer, Employee, and Administrator banking operations',
-      phase: 'Sprint 2 - Deposit and Withdrawal Management (Issue #8)',
+      phase: 'Sprint 2 - Customer Fund Transfer Between Accounts (Issue #9)',
       endpoints: {
         health: 'GET /api/health',
         login: 'POST /api/auth/login',
@@ -33,7 +34,8 @@ router.get('/', (req, res) => {
         employees: 'GET /api/employees, POST /api/employees, PUT /api/employees/:id, PATCH /api/employees/:id/status',
         accounts: 'GET /api/accounts, POST /api/accounts, GET /api/accounts/:id, PATCH /api/accounts/:id/status, POST /api/accounts/:id/deposits, POST /api/accounts/:id/withdrawals, GET /api/accounts/:id/transactions',
         customers: 'GET /api/customers, GET /api/customers/:id',
-        transactions: 'POST /api/transactions/deposit, POST /api/transactions/withdraw, GET /api/transactions'
+        transactions: 'POST /api/transactions/deposit, POST /api/transactions/withdraw, POST /api/transactions/transfer, GET /api/transactions',
+        transfers: 'POST /api/transfers'
       }
     }
   });
@@ -53,6 +55,9 @@ router.use('/accounts', accountsRouter);
 
 // Transaction processing routes (Issue #8)
 router.use('/transactions', transactionsRouter);
+
+// Customer fund transfer routes (Issue #9)
+router.use('/transfers', transfersRouter);
 
 // Health check routes
 router.use('/', healthRouter);

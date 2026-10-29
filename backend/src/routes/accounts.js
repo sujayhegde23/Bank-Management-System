@@ -21,7 +21,8 @@ const { generateUniqueAccountNumber } = require('../services/accountService');
 const {
   executeDeposit,
   executeWithdrawal,
-  getAccountTransactions
+  getAccountTransactions,
+  executeTransfer
 } = require('../services/transactionService');
 
 // Permitted account types
@@ -689,6 +690,90 @@ router.get('/:accountId/transactions', requireAuth, async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+/**
+ * POST /api/accounts/:accountId/transfers
+ * Customer fund transfer initiating from a specific source account (FR-15, FR-16, FR-17).
+ * Access: Authenticated CUSTOMER only.
+ */
+router.post('/:accountId/transfers', requireAuth, requireRole('CUSTOMER'), async (req, res, next) => {
+  try {
+    const sourceAccountId = parseStrictAccountId(req.params.accountId);
+    if (!sourceAccountId) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'VAL_001',
+        message: 'Invalid source account ID. Must be a positive integer.',
+        error: {
+          code: 'VAL_001',
+          message: 'Invalid source account ID. Must be a positive integer.'
+        }
+      });
+    }
+
+    const {
+      destinationAccountId,
+      destinationAccountNumber,
+      destinationAccount,
+      amount,
+      remarks,
+      _testFailurePoint
+    } = req.body || {};
+
+    const targetDest = destinationAccountId !== undefined && destinationAccountId !== null && destinationAccountId !== ''
+      ? destinationAccountId
+      : (destinationAccountNumber || destinationAccount);
+
+    if (targetDest === undefined || targetDest === null || String(targetDest).trim() === '') {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'VAL_001',
+        message: 'Destination account is required.',
+        error: {
+          code: 'VAL_001',
+          message: 'Destination account is required.'
+        }
+      });
+    }
+
+    if (amount === undefined || amount === null || amount === '') {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'TXN_002',
+        message: 'Amount is required.',
+        error: {
+          code: 'TXN_002',
+          message: 'Amount is required.'
+        }
+      });
+    }
+
+    const result = await executeTransfer({
+      sourceAccountId,
+      destinationAccountId: targetDest,
+      destinationAccountNumber,
+      amount,
+      remarks,
+      performedByUserId: req.user.userId,
+      sessionCustomerId: req.user.customerId,
+      _testFailurePoint
+    });
+
+    const formattedAmt = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR'
+    }).format(result.amount);
+
+    return res.status(201).json({
+      success: true,
+      message: `Successfully transferred ${formattedAmt} to account ${result.destinationAccountNumber}.`,
       data: result
     });
   } catch (error) {

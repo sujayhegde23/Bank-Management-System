@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getSystemHealth, login, logout, getCurrentUser, getAccounts, getAccountTransactions } from './services/api';
 import EmployeeManagement from './components/EmployeeManagement';
 import AccountManagement from './components/AccountManagement';
+import CustomerTransferModal from './components/CustomerTransferModal';
 import './App.css';
 
 /* ==============================================================================
@@ -147,6 +148,15 @@ function IconArrowUpCircle({ size = 18, className = '' }) {
   );
 }
 
+function IconSend({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="22" y1="2" x2="11" y2="13" />
+      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </svg>
+  );
+}
+
 function IconHistory({ size = 18, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -246,6 +256,8 @@ export default function App() {
   const [accountAction, setAccountAction] = useState(null);
   const [customerStatementModal, setCustomerStatementModal] = useState(null);
   const [custStatementTxns, setCustStatementTxns] = useState([]);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [selectedTransferSourceId, setSelectedTransferSourceId] = useState(null);
   const [custStatementLoading, setCustStatementLoading] = useState(false);
 
   // Customer retail accounts state (FR-09)
@@ -380,6 +392,8 @@ export default function App() {
       setPassword('');
       setActiveNav('accounts');
       setCustomerAccounts([]);
+      setTransferModalOpen(false);
+      setSelectedTransferSourceId(null);
     } catch (err) {
       setAuthError(err.message || 'Logout failed');
     } finally {
@@ -681,14 +695,20 @@ export default function App() {
                 <span className="nav-badge-active">Active</span>
               </button>
 
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Fund transfer workflow scheduled for Sprint 2 (FR-15)"
+              <button
+                id="nav-customer-transfer-btn"
+                type="button"
+                className={`sidebar-nav-item ${transferModalOpen ? 'selected' : ''}`}
+                onClick={() => {
+                  setSelectedTransferSourceId(null);
+                  setTransferModalOpen(true);
+                }}
+                title="Transfer money from your bank account to another account (FR-15)"
               >
-                <IconFileText size={17} />
+                <IconSend size={17} />
                 <span>Transfer Funds</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
+                <span className="nav-badge-active" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>Active</span>
+              </button>
 
               <button
                 type="button"
@@ -929,15 +949,32 @@ export default function App() {
                       Live account balances and operational status from the core banking ledger (FR-09).
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className="btn-secondary-custom"
-                    onClick={loadCustomerAccounts}
-                    disabled={custAccountsLoading}
-                  >
-                    <IconCreditCard size={15} />
-                    <span>{custAccountsLoading ? 'Refreshing...' : 'Refresh Balance'}</span>
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary-custom"
+                      onClick={loadCustomerAccounts}
+                      disabled={custAccountsLoading}
+                    >
+                      <IconCreditCard size={15} />
+                      <span>{custAccountsLoading ? 'Refreshing...' : 'Refresh Balance'}</span>
+                    </button>
+                    <button
+                      id="customer-header-transfer-btn"
+                      type="button"
+                      className="btn-primary-custom"
+                      onClick={() => {
+                        setSelectedTransferSourceId(null);
+                        setTransferModalOpen(true);
+                      }}
+                      disabled={customerAccounts.filter((a) => a.status === 'ACTIVE').length === 0}
+                      style={{ gap: '0.45rem', fontSize: '0.85rem' }}
+                      title="Initiate fund transfer between accounts (FR-15)"
+                    >
+                      <IconSend size={15} />
+                      <span>Transfer Funds</span>
+                    </button>
+                  </div>
                 </div>
 
                 {custAccountsLoading ? (
@@ -983,26 +1020,43 @@ export default function App() {
                                 {formatted}
                               </span>
                             </div>
-                            <button
-                              type="button"
-                              className="btn-secondary-custom"
-                              style={{ marginTop: '0.85rem', width: '100%', justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
-                              onClick={async () => {
-                                setCustomerStatementModal(acc);
-                                setCustStatementLoading(true);
-                                try {
-                                  const res = await getAccountTransactions(acc.accountId, { page: 1, size: 20 });
-                                  setCustStatementTxns(res?.transactions || []);
-                                } catch {
-                                  setCustStatementTxns([]);
-                                } finally {
-                                  setCustStatementLoading(false);
-                                }
-                              }}
-                            >
-                              <IconHistory size={14} />
-                              <span>View Statement &amp; Ledger</span>
-                            </button>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem' }}>
+                              <button
+                                type="button"
+                                className="btn-secondary-custom"
+                                style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
+                                onClick={async () => {
+                                  setCustomerStatementModal(acc);
+                                  setCustStatementLoading(true);
+                                  try {
+                                    const res = await getAccountTransactions(acc.accountId, { page: 1, size: 20 });
+                                    setCustStatementTxns(res?.transactions || []);
+                                  } catch {
+                                    setCustStatementTxns([]);
+                                  } finally {
+                                    setCustStatementLoading(false);
+                                  }
+                                }}
+                              >
+                                <IconHistory size={14} />
+                                <span>Statement</span>
+                              </button>
+                              {acc.status === 'ACTIVE' && (
+                                <button
+                                  type="button"
+                                  className="btn-primary-custom"
+                                  style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
+                                  onClick={() => {
+                                    setSelectedTransferSourceId(acc.accountId);
+                                    setTransferModalOpen(true);
+                                  }}
+                                  title="Transfer funds from this account (FR-15)"
+                                >
+                                  <IconSend size={14} />
+                                  <span>Transfer</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -1141,15 +1195,32 @@ export default function App() {
                       Live account balances and operational status from the core banking ledger (FR-09).
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className="btn-secondary-custom"
-                    onClick={loadCustomerAccounts}
-                    disabled={custAccountsLoading}
-                  >
-                    <IconCreditCard size={15} />
-                    <span>{custAccountsLoading ? 'Refreshing...' : 'Refresh Balance'}</span>
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary-custom"
+                      onClick={loadCustomerAccounts}
+                      disabled={custAccountsLoading}
+                    >
+                      <IconCreditCard size={15} />
+                      <span>{custAccountsLoading ? 'Refreshing...' : 'Refresh Balance'}</span>
+                    </button>
+                    <button
+                      id="customer-header-transfer-btn"
+                      type="button"
+                      className="btn-primary-custom"
+                      onClick={() => {
+                        setSelectedTransferSourceId(null);
+                        setTransferModalOpen(true);
+                      }}
+                      disabled={customerAccounts.filter((a) => a.status === 'ACTIVE').length === 0}
+                      style={{ gap: '0.45rem', fontSize: '0.85rem' }}
+                      title="Initiate fund transfer between accounts (FR-15)"
+                    >
+                      <IconSend size={15} />
+                      <span>Transfer Funds</span>
+                    </button>
+                  </div>
                 </div>
 
                 {custAccountsLoading ? (
@@ -1195,26 +1266,43 @@ export default function App() {
                                 {formatted}
                               </span>
                             </div>
-                            <button
-                              type="button"
-                              className="btn-secondary-custom"
-                              style={{ marginTop: '0.85rem', width: '100%', justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
-                              onClick={async () => {
-                                setCustomerStatementModal(acc);
-                                setCustStatementLoading(true);
-                                try {
-                                  const res = await getAccountTransactions(acc.accountId, { page: 1, size: 20 });
-                                  setCustStatementTxns(res?.transactions || []);
-                                } catch {
-                                  setCustStatementTxns([]);
-                                } finally {
-                                  setCustStatementLoading(false);
-                                }
-                              }}
-                            >
-                              <IconHistory size={14} />
-                              <span>View Statement &amp; Ledger</span>
-                            </button>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem' }}>
+                              <button
+                                type="button"
+                                className="btn-secondary-custom"
+                                style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
+                                onClick={async () => {
+                                  setCustomerStatementModal(acc);
+                                  setCustStatementLoading(true);
+                                  try {
+                                    const res = await getAccountTransactions(acc.accountId, { page: 1, size: 20 });
+                                    setCustStatementTxns(res?.transactions || []);
+                                  } catch {
+                                    setCustStatementTxns([]);
+                                  } finally {
+                                    setCustStatementLoading(false);
+                                  }
+                                }}
+                              >
+                                <IconHistory size={14} />
+                                <span>Statement</span>
+                              </button>
+                              {acc.status === 'ACTIVE' && (
+                                <button
+                                  type="button"
+                                  className="btn-primary-custom"
+                                  style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
+                                  onClick={() => {
+                                    setSelectedTransferSourceId(acc.accountId);
+                                    setTransferModalOpen(true);
+                                  }}
+                                  title="Transfer funds from this account (FR-15)"
+                                >
+                                  <IconSend size={14} />
+                                  <span>Transfer</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -1280,6 +1368,17 @@ export default function App() {
           )}
         </main>
       </div>
+      {/* Customer Fund Transfer Modal (Issue #9) */}
+      <CustomerTransferModal
+        isOpen={transferModalOpen}
+        onClose={() => setTransferModalOpen(false)}
+        accounts={customerAccounts}
+        initialSourceAccountId={selectedTransferSourceId}
+        onTransferSuccess={() => {
+          loadCustomerAccounts().catch(() => {});
+        }}
+      />
+
       {/* Customer Account Statement Modal */}
       {customerStatementModal && (
         <div

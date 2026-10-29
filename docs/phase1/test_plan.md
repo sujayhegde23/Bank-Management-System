@@ -816,9 +816,9 @@ Verification types: **T** = Test execution, **I** = Inspection or review,
 | FR-12 | Deposit | TC-05 | T | **Pending Implementation** (Scheduled for Sprint 2) |
 | FR-13 | Withdrawal | TC-15 | T | **Pending Implementation** (Scheduled for Sprint 2) |
 | FR-14 | Reject withdrawal with insufficient balance | TC-06 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-15 | Fund transfer | TC-07 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-16 | Balance check before transfer | TC-07 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-17 | Update sender and receiver balances | TC-07 | T | **Pending Implementation** (Scheduled for Sprint 2) |
+| FR-15 | Fund transfer | TC-07 | T | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenario 1 & React UI) |
+| FR-16 | Balance check before transfer | TC-07 | T | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenario 2; TXN_001 rejection) |
+| FR-17 | Update sender and receiver balances | TC-07 | T | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenarios 1, 6, 7; InnoDB ACID commit) |
 | FR-18 | Unique transaction ID | TC-05, TC-07, TC-15 | T, A | **Pending Implementation** (Scheduled for Sprint 2; DB schema UK verified via REV-03) |
 | FR-19 | Record completed transactions | TC-05, TC-07, TC-15 | T | **Pending Implementation** (Scheduled for Sprint 2) |
 | FR-20 | Customer transaction history | TC-16 | T | **Pending Implementation** (Scheduled for Sprint 2) |
@@ -839,7 +839,7 @@ Verification types: **T** = Test execution, **I** = Inspection or review,
 | NFR-05 | Authentication before sensitive operations | TC-01, TC-03, TC-13 | T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenarios 6, 7, 10) |
 | NFR-06 | Response time ≤ 3 s (95%) | TC-11 | T | **Not Executed** (Planned for load testing phase under target volume) |
 | NFR-07 | Transaction time ≤ 5 s (95%) | TC-11 | T | **Not Executed** (Planned for load testing phase under target volume) |
-| NFR-08 | Consistent balances | TC-07, Section 5.2 | T, A | **Pending Implementation** (Scheduled for Sprint 2 transaction engine) |
+| NFR-08 | Consistent balances | TC-07, Section 5.2 | T, A | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenarios 1 & 7; zero-sum conservation) |
 | NFR-09 | No partial updates on failure | TC-10 | T | **Pending Implementation** (Scheduled for Sprint 2 InnoDB rollback tests) |
 | NFR-10 | One unmodifiable record per transaction | TC-05, TC-07, TC-15 | T, I | **Pending Implementation** (Scheduled for Sprint 2) |
 | NFR-11 | Role-specific navigation menu | TC-21 | D | **Pending Implementation** (Scheduled for Sprint 2 full dashboard UI) |

@@ -85,7 +85,7 @@ are code or schema reviews defined in
 | FR-12 Deposit money | UC-15 Deposit Money | Transaction Service | TC-05 | Passed |
 | FR-13 Withdraw money | UC-16 Withdraw Money | Transaction Service | TC-15 | Passed |
 | FR-14 Overdraft protection | UC-16 Withdraw Money | Transaction Service | TC-06 | Passed |
-| FR-15 Transfer funds | UC-04 Transfer Funds | Transaction Service | TC-07 | Pending Implementation |
+| FR-15 Transfer funds | UC-04 Transfer Funds | Transaction Service | TC-07 | Passed |
 | FR-03 / NFR-02 Role-based access | All role-specific UCs | Authentication & Authorization Service | TC-03 | Partially Verified (Middleware Passed) |
 | NFR-09 No partial updates | UC-04, UC-15, UC-16 (transaction processing) | Transaction Service + Data Access Layer + Relational Database | TC-10 | Passed |
 | NFR-01 Password hashing | UC-01, UC-07 | Authentication & Authorization Service | TC-09 | Passed |

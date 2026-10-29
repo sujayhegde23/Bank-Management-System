@@ -17,7 +17,8 @@ const router = express.Router();
 const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   executeDeposit,
-  executeWithdrawal
+  executeWithdrawal,
+  executeTransfer
 } = require('../services/transactionService');
 const { query } = require('../config/db');
 
@@ -122,6 +123,91 @@ router.post('/withdraw', requireAuth, requireRole('EMPLOYEE'), async (req, res, 
  * Retrieve recent transaction records for banking oversight (FR-21).
  * Access: Authenticated EMPLOYEE or ADMIN only.
  */
+
+/**
+ * POST /api/transactions/transfer
+ * Customer fund transfer between accounts (FR-15, FR-16, FR-17).
+ * Access: Authenticated CUSTOMER only.
+ */
+router.post('/transfer', requireAuth, requireRole('CUSTOMER'), async (req, res, next) => {
+  try {
+    const {
+      sourceAccountId,
+      destinationAccountId,
+      destinationAccountNumber,
+      destinationAccount,
+      amount,
+      remarks,
+      _testFailurePoint
+    } = req.body || {};
+
+    const parsedSourceAccountId = parseStrictAccountId(sourceAccountId);
+    if (!parsedSourceAccountId) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'VAL_001',
+        message: 'Invalid source account ID. Must be a positive integer.',
+        error: {
+          code: 'VAL_001',
+          message: 'Invalid source account ID. Must be a positive integer.'
+        }
+      });
+    }
+
+    const targetDest = destinationAccountId !== undefined && destinationAccountId !== null && destinationAccountId !== ''
+      ? destinationAccountId
+      : (destinationAccountNumber || destinationAccount);
+
+    if (targetDest === undefined || targetDest === null || String(targetDest).trim() === '') {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'VAL_001',
+        message: 'Destination account is required.',
+        error: {
+          code: 'VAL_001',
+          message: 'Destination account is required.'
+        }
+      });
+    }
+
+    if (amount === undefined || amount === null || amount === '') {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'TXN_002',
+        message: 'Amount is required.',
+        error: {
+          code: 'TXN_002',
+          message: 'Amount is required.'
+        }
+      });
+    }
+
+    const result = await executeTransfer({
+      sourceAccountId: parsedSourceAccountId,
+      destinationAccountId: targetDest,
+      destinationAccountNumber,
+      amount,
+      remarks,
+      performedByUserId: req.user.userId,
+      sessionCustomerId: req.user.customerId,
+      _testFailurePoint
+    });
+
+    const formattedAmt = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR'
+    }).format(result.amount);
+
+    return res.status(201).json({
+      success: true,
+      message: `Successfully transferred ${formattedAmt} to account ${result.destinationAccountNumber}.`,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/', requireAuth, requireRole('EMPLOYEE', 'ADMIN'), async (req, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
