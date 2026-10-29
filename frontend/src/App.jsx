@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { getSystemHealth, login, logout, getCurrentUser, getAccounts, getAccountTransactions } from './services/api';
 import EmployeeManagement from './components/EmployeeManagement';
 import AccountManagement from './components/AccountManagement';
 import CustomerTransferModal from './components/CustomerTransferModal';
 import TransactionsView from './components/TransactionsView';
+import CustomerManagement from './components/CustomerManagement';
+import { getCustomer, updateCustomer } from './services/api';
 import './App.css';
 
 /* ==============================================================================
@@ -158,6 +161,17 @@ function IconSend({ size = 18, className = '' }) {
   );
 }
 
+
+function IconRefreshCw({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+
 function IconHistory({ size = 18, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -264,6 +278,54 @@ export default function App() {
   const [custStatementTotalPages, setCustStatementTotalPages] = useState(1);
   const [custStatementTotal, setCustStatementTotal] = useState(0);
   const [custStatementType, setCustStatementType] = useState('');
+
+  // Customer Profile Modal State (FR-05, FR-06, A-06)
+  const [customerProfileModalOpen, setCustomerProfileModalOpen] = useState(false);
+  const [customerProfileData, setCustomerProfileData] = useState(null);
+  const [customerProfileForm, setCustomerProfileForm] = useState({ phone: '', email: '', address: '' });
+  const [customerProfileLoading, setCustomerProfileLoading] = useState(false);
+  const [customerProfileSaving, setCustomerProfileSaving] = useState(false);
+  const [customerProfileError, setCustomerProfileError] = useState(null);
+  const [customerProfileSuccess, setCustomerProfileSuccess] = useState(null);
+
+  const openCustomerProfileModal = async () => {
+    if (!currentUser?.customerId) return;
+    setCustomerProfileModalOpen(true);
+    setCustomerProfileLoading(true);
+    setCustomerProfileError(null);
+    setCustomerProfileSuccess(null);
+    try {
+      const data = await getCustomer(currentUser.customerId);
+      setCustomerProfileData(data);
+      setCustomerProfileForm({
+        phone: data.phone || '',
+        email: data.email || '',
+        address: data.address || ''
+      });
+    } catch (err) {
+      setCustomerProfileError(err.message || 'Failed to load customer profile');
+    } finally {
+      setCustomerProfileLoading(false);
+    }
+  };
+
+  const handleCustomerProfileSave = async (e) => {
+    e.preventDefault();
+    if (!currentUser?.customerId) return;
+    setCustomerProfileSaving(true);
+    setCustomerProfileError(null);
+    setCustomerProfileSuccess(null);
+    try {
+      const res = await updateCustomer(currentUser.customerId, customerProfileForm);
+      setCustomerProfileData(res.data || res);
+      setCustomerProfileSuccess('Your contact details have been updated successfully.');
+    } catch (err) {
+      setCustomerProfileError(err.message || 'Failed to update contact details');
+    } finally {
+      setCustomerProfileSaving(false);
+    }
+  };
+
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -631,14 +693,17 @@ export default function App() {
                 <span className="nav-badge-active">Active</span>
               </button>
 
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Customer management scheduled for Sprint 2"
+              <button
+                id="nav-admin-customers-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'customers' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('customers')}
+                title="View and manage customers (FR-05, FR-06)"
               >
                 <IconUsers size={17} />
                 <span>Customers</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
+                <span className="nav-badge-active">Active</span>
+              </button>
 
               <button
                 id="nav-admin-transactions-btn"
@@ -687,14 +752,17 @@ export default function App() {
                 <span>Staff Overview</span>
               </button>
 
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Customer registration scheduled for Sprint 2 (FR-04)"
+              <button
+                id="nav-employee-customers-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'customers' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('customers')}
+                title="Register and manage customers (FR-04, FR-05, FR-06)"
               >
                 <IconUsers size={17} />
-                <span>Register Customer</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
+                <span>Customers</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
 
               <button
                 id="nav-cash-deposit-btn"
@@ -766,6 +834,18 @@ export default function App() {
                 <IconSend size={17} />
                 <span>Transfer Funds</span>
                 <span className="nav-badge-active" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>Active</span>
+              </button>
+
+              <button
+                id="nav-customer-profile-btn"
+                type="button"
+                className={`sidebar-nav-item ${customerProfileModalOpen ? 'selected' : ''}`}
+                onClick={openCustomerProfileModal}
+                title="View and update your contact details (FR-06)"
+              >
+                <IconUserCheck size={17} />
+                <span>My Profile</span>
+                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
@@ -1118,6 +1198,11 @@ export default function App() {
                 </p>
               </div>
             </div>
+          ) : activeNav === 'customers' && (isEmployee || isAdmin) ? (
+            /* ==================================================================
+               CUSTOMER DIRECTORY & MANAGEMENT (Issue #6, FR-04, FR-05, FR-06)
+               ================================================================== */
+            <CustomerManagement currentUser={currentUser} />
           ) : activeNav === 'accounts' ? (
             /* ==================================================================
                ACCOUNT MANAGEMENT CONSOLE (Issue #7 & Issue #8)
@@ -1426,8 +1511,153 @@ export default function App() {
         }}
       />
 
+
+      {/* Customer Profile & Contact Details Modal (FR-05, FR-06, SRS A-06) */}
+      {customerProfileModalOpen && createPortal(
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="customer-profile-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !customerProfileSaving) {
+              setCustomerProfileModalOpen(false);
+            }
+          }}
+        >
+          <div className="modal-card" style={{ maxWidth: '560px' }}>
+            <div className="modal-header">
+              <div className="modal-title-box">
+                <IconUserCheck size={20} className="modal-header-icon" />
+                <h3 id="customer-profile-modal-title">My Customer Profile</h3>
+              </div>
+              <button
+                type="button"
+                className="modal-close-icon-btn"
+                onClick={() => setCustomerProfileModalOpen(false)}
+                disabled={customerProfileSaving}
+                aria-label="Close dialog"
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            {customerProfileLoading ? (
+              <div style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8' }}>
+                <IconRefreshCw size={24} className="spin-icon" style={{ margin: '0 auto 0.75rem auto' }} />
+                <p style={{ margin: 0, fontSize: '0.85rem' }}>Loading customer profile...</p>
+              </div>
+            ) : customerProfileData ? (
+              <form onSubmit={handleCustomerProfileSave}>
+                <div className="modal-body-content" style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {customerProfileError && (
+                    <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', padding: '0.65rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem' }} role="alert">
+                      {customerProfileError}
+                    </div>
+                  )}
+
+                  {customerProfileSuccess && (
+                    <div style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#6ee7b7', padding: '0.65rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem' }} role="alert">
+                      {customerProfileSuccess}
+                    </div>
+                  )}
+
+                  {/* Identity Summary Card (Read-Only) */}
+                  <div style={{ background: '#090e1a', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '6px', padding: '0.85rem 1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.35rem' }}>
+                      <span style={{ fontSize: '0.725rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Account Holder Name</span>
+                      <span style={{ fontSize: '0.725rem', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>Customer ID #{customerProfileData.customerId}</span>
+                    </div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f8fafc' }}>
+                      {customerProfileData.fullName}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.35rem' }}>
+                      Date of Birth: <strong style={{ color: '#cbd5e1' }}>{customerProfileData.dateOfBirth ? customerProfileData.dateOfBirth.slice(0, 10) : '—'}</strong> &bull; Username: <strong style={{ color: '#cbd5e1' }}>@{customerProfileData.username}</strong>
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.4rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.4rem' }}>
+                      Identity details are verified by branch staff and cannot be modified online (SRS Assumption A-06).
+                    </div>
+                  </div>
+
+                  {/* Editable Contact Fields (FR-06) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div>
+                      <label htmlFor="cust-phone-input" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.3rem' }}>
+                        Phone Number
+                      </label>
+                      <input
+                        id="cust-phone-input"
+                        type="text"
+                        style={{ width: '100%', padding: '0.5rem 0.75rem' }}
+                        value={customerProfileForm.phone}
+                        onChange={(e) => setCustomerProfileForm({ ...customerProfileForm, phone: e.target.value })}
+                        disabled={customerProfileSaving}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="cust-email-input" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.3rem' }}>
+                        Email Address
+                      </label>
+                      <input
+                        id="cust-email-input"
+                        type="email"
+                        style={{ width: '100%', padding: '0.5rem 0.75rem' }}
+                        value={customerProfileForm.email}
+                        onChange={(e) => setCustomerProfileForm({ ...customerProfileForm, email: e.target.value })}
+                        disabled={customerProfileSaving}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="cust-address-input" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.3rem' }}>
+                        Residential Address
+                      </label>
+                      <input
+                        id="cust-address-input"
+                        type="text"
+                        style={{ width: '100%', padding: '0.5rem 0.75rem' }}
+                        value={customerProfileForm.address}
+                        onChange={(e) => setCustomerProfileForm({ ...customerProfileForm, address: e.target.value })}
+                        disabled={customerProfileSaving}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ padding: '0.85rem 1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary-custom"
+                    onClick={() => setCustomerProfileModalOpen(false)}
+                    disabled={customerProfileSaving}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary-custom"
+                    disabled={customerProfileSaving}
+                  >
+                    {customerProfileSaving ? 'Saving Contact Info...' : 'Update Contact Info'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                Profile details unavailable.
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Customer Account Statement Modal */}
-      {customerStatementModal && (
+      {customerStatementModal && createPortal(
         <div className="modal-overlay" onClick={() => setCustomerStatementModal(null)}>
           <div className="modal-card" style={{ maxWidth: '840px' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -1653,13 +1883,13 @@ export default function App() {
               <button
                 type="button"
                 className="btn-secondary-custom"
-                onClick={() => setCustomerStatementModal(null)}
-              >
+                onClick={() => setCustomerStatementModal(null)}>
                 Close
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

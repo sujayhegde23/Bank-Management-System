@@ -360,3 +360,45 @@ export async function transferFunds(data) {
   });
   return response?.data || response;
 }
+
+
+/**
+ * ==============================================================================
+ * Customer Registration and Profile Management API (Issue #6)
+ * ==============================================================================
+ */
+
+/**
+ * Fetch a single customer profile by customerId (FR-05).
+ * @param {number|string} customerId
+ * @returns {Promise<any>}
+ */
+export async function getCustomer(customerId) {
+  const response = await apiRequest(`/customers/${customerId}`);
+  return response?.data || response;
+}
+
+/**
+ * Register a new customer with login credentials (FR-04).
+ * @param {{ fullName: string, dateOfBirth: string, phone: string, email: string, address: string, username: string, password: string }} customerData
+ * @returns {Promise<any>}
+ */
+export async function registerCustomer(customerData) {
+  return await apiRequest('/customers', {
+    method: 'POST',
+    body: JSON.stringify(customerData)
+  });
+}
+
+/**
+ * Update permitted customer profile information (FR-06).
+ * @param {number|string} customerId
+ * @param {{ fullName?: string, dateOfBirth?: string, phone?: string, email?: string, address?: string }} updateData
+ * @returns {Promise<any>}
+ */
+export async function updateCustomer(customerId, updateData) {
+  return await apiRequest(`/customers/${customerId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updateData)
+  });
+}
