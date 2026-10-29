@@ -667,8 +667,8 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Steps | 1. Open **View Account Details**. 2. Open **Transaction History** for ACC-T1. 3. Change the account ID in the URL or API request to ACC-T2 (owned by C2) and request its details. 4. Request the transaction history of ACC-T2 in the same way. |
 | Test Data / Input | Own account: ACC-T1; other customer's account: ACC-T2 |
 | Expected Result | Step 1 shows only ACC-T1 and ACC-T4 with correct numbers, status and balances. Step 2 shows ACC-T1's transactions, newest first. Steps 3–4 are denied with `AUTH_002`, and none of ACC-T2's data is returned. |
-| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/accounts.test.js`, Scenarios 2 & 3) and browser verification. Customer `test.customer1` querying `/api/accounts` retrieves strictly their own accounts (ACC-T1, ACC-T4); querying another customer's account or account ID returns HTTP 403 `AUTH_002`. Employees and Admins retrieve all accounts with full customer information. |
-| Status | Passed (Account Balance and Details Retrieval Verified) |
+| Actual Result | Fully verified on 2026-10-29 via automated integration test suite (`tests/history.test.js`, Scenarios 1-14) and React UI Statement Modal. Customer viewing `/api/accounts/:id/transactions` receives completed transactions in deterministic descending order (`created_at DESC, transaction_id DESC`) with pagination metadata. Accessing another customer's account history is strictly forbidden and rejected with HTTP 403 `AUTH_002` (NFR-03 data isolation). |
+| Status | Passed (Customer Transaction History & Data Isolation Verified) |
 
 ### TC-17 — Change Password
 
@@ -718,8 +718,8 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | Test Steps | 1. As `test.employee1`, open **View Transaction Records** filtered by ACC-T2 and today's date. 2. As `test.admin1`, open **View Transaction Records** with the same filter. 3. As `test.admin1`, generate the summary report for today. 4. Compare the report figures with the database. |
 | Test Data / Input | Filter: ACC-T2, today's date; Report date range: today |
 | Expected Result | Steps 1–2 list the ACC-T2 transactions from today. The step 3 report shows the total customers, accounts per status (Active, Inactive, Frozen), and the count and total value of deposits, withdrawals and transfers, all equal to the database values. |
-| Actual Result | Feature scheduled for Sprint 2 (Employee/Admin transaction records view and Reporting Service). |
-| Status | Pending Implementation |
+| Actual Result | Transaction record viewing verified on 2026-10-29 via automated integration test suite (`tests/history.test.js`, Scenario 15) and React UI (`TransactionsView`). Bank Employees and Administrators can query global transactions with filters for account number, type (DEPOSIT, WITHDRAWAL, TRANSFER), date range, and keyword search. Unauthorized roles (Customer) are rejected with HTTP 403 `AUTH_002`. |
+| Status | Passed (Transaction View Verified / Reporting Service Pending) |
 
 ### TC-20 — View and Update Customer Information
 
@@ -819,10 +819,10 @@ Verification types: **T** = Test execution, **I** = Inspection or review,
 | FR-15 | Fund transfer | TC-07 | T | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenario 1 & React UI) |
 | FR-16 | Balance check before transfer | TC-07 | T | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenario 2; TXN_001 rejection) |
 | FR-17 | Update sender and receiver balances | TC-07 | T | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenarios 1, 6, 7; InnoDB ACID commit) |
-| FR-18 | Unique transaction ID | TC-05, TC-07, TC-15 | T, A | **Pending Implementation** (Scheduled for Sprint 2; DB schema UK verified via REV-03) |
-| FR-19 | Record completed transactions | TC-05, TC-07, TC-15 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-20 | Customer transaction history | TC-16 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-21 | Employee/administrator transaction view | TC-19 | T | **Pending Implementation** (Scheduled for Sprint 2) |
+| FR-18 | Unique transaction ID | TC-05, TC-07, TC-15 | T, A | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenarios 3 & 4; unique references with `TXN-<TYPE>-<HEX>`) |
+| FR-19 | Record completed transactions | TC-05, TC-07, TC-15 | T | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenarios 1-3; insert-only `bank_transactions` ledger) |
+| FR-20 | Customer transaction history | TC-16 | T | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenarios 1-14 & Statement Modal, TC-16) |
+| FR-21 | Employee/administrator transaction view | TC-19 | T | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenario 15 & `TransactionsView`, TC-19) |
 | FR-22 | Change password | TC-17 | T | **Pending Implementation** (Scheduled for Sprint 2; bcrypt storage verified via TC-09) |
 | FR-23 | Create and manage employee accounts | TC-18 | T | **Pending Implementation** (Scheduled for Sprint 2) |
 | FR-24 | Deactivate employee accounts | TC-18 | T | **Passed (Auth Enforcement)** / Pending Implementation (Admin CRUD UI pending Sprint 2) |
@@ -834,14 +834,14 @@ Verification types: **T** = Test execution, **I** = Inspection or review,
 |---|---|---|---|---|
 | NFR-01 | Passwords stored as salted hashes | TC-09, TC-17 | I, T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenario 12 & DB inspection) |
 | NFR-02 | Role-based feature restriction | TC-03, TC-18, TC-20 | T | **Passed (Middleware)** / Pending Implementation (Full UI pending Sprint 2) |
-| NFR-03 | Prevent unauthorized data access | TC-02, TC-03, TC-16 | T | **Passed (Auth & Middleware)** / Pending Implementation (Account data endpoints pending Sprint 2) |
+| NFR-03 | Prevent unauthorized data access | TC-02, TC-03, TC-16 | T | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenario 7 & `tests/accounts.test.js`; horizontal customer data isolation) |
 | NFR-04 | Input validation | TC-12 | T | **Passed (Auth Input)** / Pending Implementation (Transaction inputs pending Sprint 2) |
 | NFR-05 | Authentication before sensitive operations | TC-01, TC-03, TC-13 | T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenarios 6, 7, 10) |
 | NFR-06 | Response time ≤ 3 s (95%) | TC-11 | T | **Not Executed** (Planned for load testing phase under target volume) |
 | NFR-07 | Transaction time ≤ 5 s (95%) | TC-11 | T | **Not Executed** (Planned for load testing phase under target volume) |
 | NFR-08 | Consistent balances | TC-07, Section 5.2 | T, A | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenarios 1 & 7; zero-sum conservation) |
 | NFR-09 | No partial updates on failure | TC-10 | T | **Pending Implementation** (Scheduled for Sprint 2 InnoDB rollback tests) |
-| NFR-10 | One unmodifiable record per transaction | TC-05, TC-07, TC-15 | T, I | **Pending Implementation** (Scheduled for Sprint 2) |
+| NFR-10 | One unmodifiable record per transaction | TC-05, TC-07, TC-15 | T, I | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenarios 4, 14; immutable insert-only `bank_transactions` ledger) |
 | NFR-11 | Role-specific navigation menu | TC-21 | D | **Pending Implementation** (Scheduled for Sprint 2 full dashboard UI) |
 | NFR-12 | Meaningful, safe error messages | TC-02, TC-06, TC-10, TC-12 | T | **Passed (Auth/Health)** / Pending Implementation (Financial errors pending Sprint 2) |
 | NFR-13 | Core operations within 3 navigation actions | TC-21 | D | **Pending Implementation** (Scheduled for Sprint 2) |

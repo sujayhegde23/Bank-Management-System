@@ -18,7 +18,8 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   executeDeposit,
   executeWithdrawal,
-  executeTransfer
+  executeTransfer,
+  listBankTransactions
 } = require('../services/transactionService');
 const { query } = require('../config/db');
 
@@ -210,46 +211,52 @@ router.post('/transfer', requireAuth, requireRole('CUSTOMER'), async (req, res, 
 
 router.get('/', requireAuth, requireRole('EMPLOYEE', 'ADMIN'), async (req, res, next) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
-    const offset = (page - 1) * limit;
+    // Validate pagination params if supplied (AC-3, NFR-18)
+    if (req.query.page !== undefined) {
+      const parsedPage = parseStrictAccountId(req.query.page);
+      if (parsedPage === null || parsedPage < 1) {
+        return res.status(400).json({
+          success: false,
+          errorCode: 'VAL_001',
+          message: 'Invalid page parameter. Must be a positive integer.',
+          error: {
+            code: 'VAL_001',
+            message: 'Invalid page parameter. Must be a positive integer.'
+          }
+        });
+      }
+    }
 
-    const countRows = await query('SELECT COUNT(*) AS total FROM bank_transactions');
-    const total = countRows[0]?.total || 0;
+    const limitParam = req.query.limit !== undefined ? req.query.limit : req.query.size;
+    if (limitParam !== undefined) {
+      const parsedLimit = parseStrictAccountId(limitParam);
+      if (parsedLimit === null || parsedLimit < 1 || parsedLimit > 100) {
+        return res.status(400).json({
+          success: false,
+          errorCode: 'VAL_001',
+          message: 'Invalid limit parameter. Must be an integer between 1 and 100.',
+          error: {
+            code: 'VAL_001',
+            message: 'Invalid limit parameter. Must be an integer between 1 and 100.'
+          }
+        });
+      }
+    }
 
-    const rows = await query(
-      `SELECT
-         t.transaction_id AS transactionId,
-         t.transaction_ref AS transactionRef,
-         t.type,
-         t.amount,
-         t.source_account_id AS sourceAccountId,
-         t.destination_account_id AS destinationAccountId,
-         t.performed_by_user_id AS performedByUserId,
-         t.remarks,
-         t.created_at AS timestamp,
-         sa.account_number AS sourceAccountNumber,
-         da.account_number AS destinationAccountNumber
-       FROM bank_transactions t
-       LEFT JOIN accounts sa ON t.source_account_id = sa.account_id
-       LEFT JOIN accounts da ON t.destination_account_id = da.account_id
-       ORDER BY t.created_at DESC, t.transaction_id DESC
-       LIMIT ? OFFSET ?`,
-      [limit, offset]
-    );
+    const result = await listBankTransactions({
+      page: req.query.page,
+      limit: limitParam,
+      accountNumber: req.query.accountNumber,
+      accountId: req.query.accountId,
+      type: req.query.type,
+      startDate: req.query.startDate || req.query.from,
+      endDate: req.query.endDate || req.query.to,
+      search: req.query.search
+    });
 
     return res.status(200).json({
       success: true,
-      data: {
-        transactions: rows.map((r) => ({
-          ...r,
-          amount: Number(r.amount)
-        })),
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit) || 1
-      }
+      data: result
     });
   } catch (error) {
     next(error);

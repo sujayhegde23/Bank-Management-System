@@ -3,6 +3,7 @@ import { getSystemHealth, login, logout, getCurrentUser, getAccounts, getAccount
 import EmployeeManagement from './components/EmployeeManagement';
 import AccountManagement from './components/AccountManagement';
 import CustomerTransferModal from './components/CustomerTransferModal';
+import TransactionsView from './components/TransactionsView';
 import './App.css';
 
 /* ==============================================================================
@@ -259,6 +260,46 @@ export default function App() {
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [selectedTransferSourceId, setSelectedTransferSourceId] = useState(null);
   const [custStatementLoading, setCustStatementLoading] = useState(false);
+  const [custStatementPage, setCustStatementPage] = useState(1);
+  const [custStatementTotalPages, setCustStatementTotalPages] = useState(1);
+  const [custStatementTotal, setCustStatementTotal] = useState(0);
+  const [custStatementType, setCustStatementType] = useState('');
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && customerStatementModal) {
+        setCustomerStatementModal(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [customerStatementModal]);
+
+  const loadCustomerStatement = async (account, page = 1, type = '') => {
+    if (!account) return;
+    setCustomerStatementModal(account);
+    setCustStatementLoading(true);
+    setCustStatementPage(page);
+    setCustStatementType(type);
+    try {
+      const res = await getAccountTransactions(account.accountId, {
+        page,
+        size: 10,
+        type: type || undefined
+      });
+      const txns = res?.transactions || res?.items || [];
+      setCustStatementTxns(txns);
+      setCustStatementTotal(res?.pagination?.total || res?.total || txns.length);
+      setCustStatementTotalPages(res?.pagination?.totalPages || res?.totalPages || Math.ceil((res?.total || txns.length) / 10) || 1);
+    } catch (err) {
+      console.error('Failed to load statement transactions:', err);
+      setCustStatementTxns([]);
+      setCustStatementTotal(0);
+      setCustStatementTotalPages(1);
+    } finally {
+      setCustStatementLoading(false);
+    }
+  };
 
   // Customer retail accounts state (FR-09)
   const [customerAccounts, setCustomerAccounts] = useState([]);
@@ -394,6 +435,8 @@ export default function App() {
       setCustomerAccounts([]);
       setTransferModalOpen(false);
       setSelectedTransferSourceId(null);
+      setCustomerStatementModal(null);
+      setCustStatementTxns([]);
     } catch (err) {
       setAuthError(err.message || 'Logout failed');
     } finally {
@@ -597,14 +640,17 @@ export default function App() {
                 <span className="nav-badge-pending">Sprint 2</span>
               </div>
 
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Transaction processing scheduled for Sprint 2"
+              <button
+                id="nav-admin-transactions-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'transactions' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('transactions')}
+                title="Audit bank-wide transaction records (FR-21)"
               >
                 <IconCreditCard size={17} />
                 <span>Transactions</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
+                <span className="nav-badge-active">Active</span>
+              </button>
 
               <div
                 className="sidebar-nav-item disabled-item"
@@ -679,6 +725,18 @@ export default function App() {
                 <span>Cash Withdrawal</span>
                 <span className="nav-badge-active" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>Active</span>
               </button>
+
+              <button
+                id="nav-employee-transactions-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'transactions' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('transactions')}
+                title="View customer transactions and audit ledger (FR-21)"
+              >
+                <IconCreditCard size={17} />
+                <span>Transactions</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
             </>
           )}
 
@@ -713,19 +771,10 @@ export default function App() {
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeNav === 'statements' ? 'selected' : ''}`}
-                onClick={async () => {
+                onClick={() => {
                   setActiveNav('statements');
                   if (customerAccounts.length > 0) {
-                    setCustomerStatementModal(customerAccounts[0]);
-                    setCustStatementLoading(true);
-                    try {
-                      const res = await getAccountTransactions(customerAccounts[0].accountId, { page: 1, size: 20 });
-                      setCustStatementTxns(res?.transactions || []);
-                    } catch {
-                      setCustStatementTxns([]);
-                    } finally {
-                      setCustStatementLoading(false);
-                    }
+                    loadCustomerStatement(customerAccounts[0], 1, '');
                   }
                 }}
                 title="View bank account statements and ledger records (FR-20)"
@@ -797,6 +846,8 @@ export default function App() {
                 ? 'Account Management'
                 : activeNav === 'employees'
                 ? 'Employee Management'
+                : activeNav === 'transactions'
+                ? 'Transaction Ledger'
                 : 'Workspace Overview'}
             </span>
           </div>
@@ -1026,16 +1077,7 @@ export default function App() {
                                 className="btn-secondary-custom"
                                 style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
                                 onClick={async () => {
-                                  setCustomerStatementModal(acc);
-                                  setCustStatementLoading(true);
-                                  try {
-                                    const res = await getAccountTransactions(acc.accountId, { page: 1, size: 20 });
-                                    setCustStatementTxns(res?.transactions || []);
-                                  } catch {
-                                    setCustStatementTxns([]);
-                                  } finally {
-                                    setCustStatementLoading(false);
-                                  }
+                                  loadCustomerStatement(acc, 1, '');
                                 }}
                               >
                                 <IconHistory size={14} />
@@ -1087,6 +1129,11 @@ export default function App() {
                ADMINISTRATOR: EMPLOYEE MANAGEMENT CONSOLE (Issue #11)
                ================================================================== */
             <EmployeeManagement currentUser={currentUser} />
+          ) : activeNav === 'transactions' && (isEmployee || isAdmin) ? (
+            /* ==================================================================
+               TRANSACTION AUDIT LEDGER (Issue #10, FR-21, NFR-10, TC-19)
+               ================================================================== */
+            <TransactionsView user={currentUser} />
           ) : isEmployee && activeNav === 'overview' ? (
             /* ==================================================================
                EMPLOYEE: BRANCH OPERATIONS OVERVIEW
@@ -1381,15 +1428,8 @@ export default function App() {
 
       {/* Customer Account Statement Modal */}
       {customerStatementModal && (
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setCustomerStatementModal(null);
-          }}
-        >
-          <div className="modal-card" style={{ maxWidth: '640px' }}>
+        <div className="modal-overlay" onClick={() => setCustomerStatementModal(null)}>
+          <div className="modal-card" style={{ maxWidth: '840px' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title-box">
                 <IconHistory size={22} className="modal-header-icon text-info" />
@@ -1405,11 +1445,49 @@ export default function App() {
               </button>
             </div>
 
-            <div className="modal-body-content" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
+            <div className="modal-body-content" style={{ maxHeight: '68vh', overflowY: 'auto' }}>
+              {/* Multi-Account Selector if Customer has more than 1 account */}
+              {customerAccounts.length > 1 && (
+                <div style={{ marginBottom: '1rem', background: '#090e1a', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <label htmlFor="statement-account-select" style={{ display: 'block', fontSize: '0.725rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '0.35rem', fontWeight: 700 }}>
+                    Switch Account Statement
+                  </label>
+                  <select
+                    id="statement-account-select"
+                    value={customerStatementModal.accountId}
+                    onChange={(e) => {
+                      const selected = customerAccounts.find((a) => String(a.accountId) === e.target.value);
+                      if (selected) {
+                        loadCustomerStatement(selected, 1, custStatementType);
+                      }
+                    }}
+                    style={{
+                      background: '#1e293b',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      color: '#f8fafc',
+                      borderRadius: '6px',
+                      padding: '0.45rem 0.65rem',
+                      fontSize: '0.825rem',
+                      width: '100%',
+                      outline: 'none'
+                    }}
+                  >
+                    {customerAccounts.map((acc) => (
+                      <option key={acc.accountId} value={acc.accountId}>
+                        {acc.accountNumber} ({acc.accountType}) — Available: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(acc.balance) || 0)} [{acc.status}]
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Account Summary Banner */}
               <div className="txn-account-summary-box" style={{ background: '#090e1a', padding: '0.85rem 1rem', borderRadius: '6px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', border: '1px solid rgba(255,255,255,0.08)' }}>
                 <div>
                   <div style={{ color: '#60a5fa', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{customerStatementModal.accountNumber}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{customerStatementModal.accountType} Account • Status: {customerStatementModal.status}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                    {customerStatementModal.accountType} Account • Status: <span style={{ color: customerStatementModal.status === 'ACTIVE' ? '#34d399' : '#f87171', fontWeight: 600 }}>{customerStatementModal.status}</span>
+                  </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Available Balance</div>
@@ -1419,14 +1497,46 @@ export default function App() {
                 </div>
               </div>
 
-              <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>
-                Transaction History
-              </h4>
+              {/* Header & Filter Row */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
+                  Transaction History (FR-20)
+                </h4>
+
+                {/* Filter Pills */}
+                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                  {[
+                    { label: 'All', val: '' },
+                    { label: 'Deposits', val: 'DEPOSIT' },
+                    { label: 'Withdrawals', val: 'WITHDRAWAL' },
+                    { label: 'Transfers', val: 'TRANSFER' }
+                  ].map((f) => (
+                    <button
+                      key={f.label}
+                      type="button"
+                      onClick={() => loadCustomerStatement(customerStatementModal, 1, f.val)}
+                      style={{
+                        background: custStatementType === f.val ? '#2563eb' : '#1e293b',
+                        color: custStatementType === f.val ? '#ffffff' : '#94a3b8',
+                        border: '1px solid',
+                        borderColor: custStatementType === f.val ? '#3b82f6' : 'rgba(255, 255, 255, 0.08)',
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {custStatementLoading ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>Loading statement ledger...</div>
+                <div style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8' }}>Loading statement ledger...</div>
               ) : custStatementTxns.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                <div style={{ padding: '2.5rem', textAlign: 'center', color: '#64748b' }}>
                   No transaction records found for this account.
                 </div>
               ) : (
@@ -1437,33 +1547,104 @@ export default function App() {
                         <th>Date &amp; Time</th>
                         <th>Reference</th>
                         <th>Type</th>
-                        <th style={{ textAlign: 'right' }}>Amount</th>
+                        <th>Transaction Flow</th>
                         <th>Remarks</th>
+                        <th style={{ textAlign: 'right' }}>Amount</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {custStatementTxns.map((tx) => (
-                        <tr key={tx.transaction_id || tx.transactionId}>
-                          <td style={{ whiteSpace: 'nowrap', color: '#94a3b8' }}>
-                            {new Date(tx.created_at || tx.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
-                          </td>
-                          <td style={{ fontFamily: 'var(--font-mono)', color: '#60a5fa' }}>
-                            {tx.transaction_ref || tx.transactionRef || tx.transactionReference}
-                          </td>
-                          <td>
-                            <span className={`badge badge-${String(tx.transaction_type || tx.type).toLowerCase() === 'deposit' ? 'success' : 'info'}`}>
-                              {tx.transaction_type || tx.type}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: String(tx.transaction_type || tx.type).toUpperCase() === 'DEPOSIT' ? '#34d399' : '#f87171' }}>
-                            {String(tx.transaction_type || tx.type).toUpperCase() === 'DEPOSIT' ? '+' : '-'}
-                            {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(tx.amount))}
-                          </td>
-                          <td style={{ color: '#94a3b8' }}>{tx.remarks || '—'}</td>
-                        </tr>
-                      ))}
+                      {custStatementTxns.map((tx) => {
+                        const typeUpper = String(tx.type || tx.transaction_type || '').toUpperCase();
+                        const isCredit = tx.direction === 'CREDIT' || (typeUpper === 'DEPOSIT');
+                        
+                        let flowDesc = '—';
+                        if (typeUpper === 'DEPOSIT') {
+                          flowDesc = 'Cash Deposit at Branch';
+                        } else if (typeUpper === 'WITHDRAWAL') {
+                          flowDesc = 'Counter Cash Withdrawal';
+                        } else if (typeUpper === 'TRANSFER') {
+                          if (isCredit) {
+                            flowDesc = `Transfer from ${tx.sourceAccountNumber || 'account'}`;
+                          } else {
+                            flowDesc = `Transfer to ${tx.destinationAccountNumber || 'recipient'}`;
+                          }
+                        }
+
+                        return (
+                          <tr key={tx.transaction_id || tx.transactionId || tx.transactionRef}>
+                            <td style={{ whiteSpace: 'nowrap', color: '#94a3b8' }}>
+                              {new Date(tx.created_at || tx.createdAt || tx.timestamp).toLocaleString('en-IN', {
+                                dateStyle: 'short',
+                                timeStyle: 'short'
+                              })}
+                            </td>
+                            <td style={{ fontFamily: 'var(--font-mono)', color: '#60a5fa' }}>
+                              {tx.transaction_ref || tx.transactionRef || tx.transactionReference}
+                            </td>
+                            <td>
+                              <span
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '0.15rem 0.45rem',
+                                  borderRadius: '4px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  background: typeUpper === 'DEPOSIT'
+                                    ? 'rgba(16, 185, 129, 0.15)'
+                                    : typeUpper === 'WITHDRAWAL'
+                                    ? 'rgba(56, 189, 248, 0.15)'
+                                    : 'rgba(168, 85, 247, 0.15)',
+                                  color: typeUpper === 'DEPOSIT' ? '#34d399' : typeUpper === 'WITHDRAWAL' ? '#38bdf8' : '#c084fc',
+                                  border: `1px solid ${typeUpper === 'DEPOSIT' ? 'rgba(16, 185, 129, 0.3)' : typeUpper === 'WITHDRAWAL' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(168, 85, 247, 0.3)'}`
+                                }}
+                              >
+                                {typeUpper}
+                              </span>
+                            </td>
+                            <td style={{ color: '#e2e8f0', fontWeight: 500 }}>
+                              {flowDesc}
+                            </td>
+                            <td style={{ color: '#94a3b8', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {tx.remarks || '—'}
+                            </td>
+                            <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: isCredit ? '#34d399' : '#f87171' }}>
+                              {isCredit ? '+ ' : '- '}
+                              {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(tx.amount))}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
+                </div>
+              )}
+
+              {/* Statement Pagination Controls */}
+              {custStatementTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                    Page {custStatementPage} of {custStatementTotalPages} ({custStatementTotal} total)
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary-custom"
+                      disabled={custStatementPage <= 1 || custStatementLoading}
+                      onClick={() => loadCustomerStatement(customerStatementModal, custStatementPage - 1, custStatementType)}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
+                    >
+                      &larr; Prev
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary-custom"
+                      disabled={custStatementPage >= custStatementTotalPages || custStatementLoading}
+                      onClick={() => loadCustomerStatement(customerStatementModal, custStatementPage + 1, custStatementType)}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
+                    >
+                      Next &rarr;
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

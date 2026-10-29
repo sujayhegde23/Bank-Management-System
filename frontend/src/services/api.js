@@ -309,6 +309,10 @@ export async function getAccountTransactions(accountId, params = {}) {
   const query = new URLSearchParams();
   if (params.page) query.append('page', params.page);
   if (params.size) query.append('size', params.size);
+  if (params.limit) query.append('limit', params.limit);
+  if (params.type) query.append('type', params.type);
+  if (params.startDate) query.append('startDate', params.startDate);
+  if (params.endDate) query.append('endDate', params.endDate);
 
   const endpoint = `/accounts/${accountId}/transactions${query.toString() ? `?${query.toString()}` : ''}`;
   const response = await apiRequest(endpoint);
@@ -317,13 +321,20 @@ export async function getAccountTransactions(accountId, params = {}) {
 
 /**
  * Fetch recent transaction records across the bank (Employee/Admin oversight).
- * @param {{ page?: number, limit?: number }} [params]
+ * @param {{ page?: number, limit?: number, size?: number, accountNumber?: string, accountId?: string|number, type?: string, startDate?: string, endDate?: string, search?: string }} [params]
  * @returns {Promise<any>}
  */
 export async function getRecentTransactions(params = {}) {
   const query = new URLSearchParams();
   if (params.page) query.append('page', params.page);
   if (params.limit) query.append('limit', params.limit);
+  if (params.size) query.append('size', params.size);
+  if (params.accountNumber) query.append('accountNumber', params.accountNumber);
+  if (params.accountId) query.append('accountId', params.accountId);
+  if (params.type) query.append('type', params.type);
+  if (params.startDate) query.append('startDate', params.startDate);
+  if (params.endDate) query.append('endDate', params.endDate);
+  if (params.search) query.append('search', params.search);
 
   const endpoint = `/transactions${query.toString() ? `?${query.toString()}` : ''}`;
   const response = await apiRequest(endpoint);
