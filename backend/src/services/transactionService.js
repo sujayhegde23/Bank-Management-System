@@ -229,6 +229,7 @@ async function executeDeposit({ accountId, amount, remarks = null, performedByUs
     return {
       transactionId: insertResult.insertId,
       transactionRef,
+      transactionReference: transactionRef,
       type: 'DEPOSIT',
       accountId: account.account_id,
       accountNumber: account.account_number,
@@ -378,6 +379,7 @@ async function executeWithdrawal({ accountId, amount, remarks = null, performedB
     return {
       transactionId: insertResult.insertId,
       transactionRef,
+      transactionReference: transactionRef,
       type: 'WITHDRAWAL',
       accountId: account.account_id,
       accountNumber: account.account_number,
@@ -402,10 +404,10 @@ async function executeWithdrawal({ accountId, amount, remarks = null, performedB
  * @param {number} [params.size=20] - Page size
  * @returns {Promise<object>} Paginated transaction records
  */
-async function getAccountTransactions({ accountId, user, page = 1, size = 20 }) {
+async function getAccountTransactions({ accountId, user, page = 1, size = 20, type, startDate, endDate }) {
   // 1. Verify account exists and retrieve ownership
   const accountRows = await query(
-    'SELECT account_id, account_number, customer_id FROM accounts WHERE account_id = ? LIMIT 1',
+    'SELECT account_id, account_number, account_type, balance, customer_id, status FROM accounts WHERE account_id = ? LIMIT 1',
     [accountId]
   );
 
@@ -420,7 +422,7 @@ async function getAccountTransactions({ accountId, user, page = 1, size = 20 }) 
   const account = accountRows[0];
 
   // 2. Customer data isolation check (NFR-03, TC-16)
-  if (user.role === 'CUSTOMER' && Number(user.customerId) !== Number(account.customer_id)) {
+  if (user && user.role === 'CUSTOMER' && Number(user.customerId) !== Number(account.customer_id)) {
     const error = new Error('You are not authorized to view transactions for this account');
     error.statusCode = 403;
     error.code = 'AUTH_002';
@@ -433,50 +435,270 @@ async function getAccountTransactions({ accountId, user, page = 1, size = 20 }) 
   const pageSize = Math.min(100, Math.max(1, parseInt(size, 10) || 20));
   const offset = (pageNum - 1) * pageSize;
 
-  // 4. Count total transactions
-  const countRows = await query(
-    `SELECT COUNT(*) AS total
-     FROM bank_transactions
-     WHERE source_account_id = ? OR destination_account_id = ?`,
-    [accountId, accountId]
-  );
+  // 4. Build dynamic query filters
+  const whereClauses = ['(t.source_account_id = ? OR t.destination_account_id = ?)'];
+  const filterParams = [accountId, accountId];
+
+  if (type && typeof type === 'string' && type.trim() !== '') {
+    const normalizedType = type.trim().toUpperCase();
+    if (['DEPOSIT', 'WITHDRAWAL', 'TRANSFER'].includes(normalizedType)) {
+      whereClauses.push('t.type = ?');
+      filterParams.push(normalizedType);
+    }
+  }
+
+  if (startDate) {
+    const parsedStart = new Date(startDate);
+    if (!isNaN(parsedStart.getTime())) {
+      whereClauses.push('t.created_at >= ?');
+      filterParams.push(parsedStart);
+    }
+  }
+
+  if (endDate) {
+    const parsedEnd = new Date(endDate);
+    if (!isNaN(parsedEnd.getTime())) {
+      if (typeof endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(endDate.trim())) {
+        parsedEnd.setHours(23, 59, 59, 999);
+      }
+      whereClauses.push('t.created_at <= ?');
+      filterParams.push(parsedEnd);
+    }
+  }
+
+  const whereSql = whereClauses.join(' AND ');
+
+  // 5. Count total matching transactions
+  const countSql = `SELECT COUNT(*) AS total FROM bank_transactions t WHERE ${whereSql}`;
+  const countRows = await query(countSql, filterParams);
   const total = countRows[0]?.total || 0;
 
-  // 5. Query transactions newest first (FR-20)
-  const rows = await query(
-    `SELECT
-       t.transaction_id AS transactionId,
-       t.transaction_ref AS transactionRef,
-       t.type,
-       t.amount,
-       t.source_account_id AS sourceAccountId,
-       t.destination_account_id AS destinationAccountId,
-       t.performed_by_user_id AS performedByUserId,
-       t.remarks,
-       t.created_at AS timestamp,
-       CASE
-         WHEN t.destination_account_id = ? THEN 'CREDIT'
-         WHEN t.source_account_id = ? THEN 'DEBIT'
-         ELSE 'UNKNOWN'
-       END AS direction
-     FROM bank_transactions t
-     WHERE t.source_account_id = ? OR t.destination_account_id = ?
-     ORDER BY t.created_at DESC, t.transaction_id DESC
-     LIMIT ? OFFSET ?`,
-    [accountId, accountId, accountId, accountId, pageSize, offset]
-  );
+  // 6. Query transactions with deterministic sort (ORDER BY t.created_at DESC, t.transaction_id DESC)
+  const selectSql = `
+    SELECT
+      t.transaction_id AS transactionId,
+      t.transaction_ref AS transactionRef,
+      t.type,
+      t.amount,
+      t.source_account_id AS sourceAccountId,
+      t.destination_account_id AS destinationAccountId,
+      sa.account_number AS sourceAccountNumber,
+      da.account_number AS destinationAccountNumber,
+      t.performed_by_user_id AS performedByUserId,
+      t.remarks,
+      t.created_at AS timestamp,
+      t.created_at AS createdAt,
+      CASE
+        WHEN t.destination_account_id = ? THEN 'CREDIT'
+        WHEN t.source_account_id = ? THEN 'DEBIT'
+        ELSE 'UNKNOWN'
+      END AS direction
+    FROM bank_transactions t
+    LEFT JOIN accounts sa ON t.source_account_id = sa.account_id
+    LEFT JOIN accounts da ON t.destination_account_id = da.account_id
+    WHERE ${whereSql}
+    ORDER BY t.created_at DESC, t.transaction_id DESC
+    LIMIT ? OFFSET ?
+  `;
+
+  const selectParams = [accountId, accountId, ...filterParams, pageSize, offset];
+  const rows = await query(selectSql, selectParams);
+
+  const formattedTransactions = rows.map((r) => ({
+    transactionId: r.transactionId,
+    transactionRef: r.transactionRef,
+    transactionReference: r.transactionRef,
+    type: r.type,
+    amount: Number(r.amount),
+    direction: r.direction,
+    sourceAccountId: r.sourceAccountId,
+    destinationAccountId: r.destinationAccountId,
+    sourceAccountNumber: r.sourceAccountNumber,
+    destinationAccountNumber: r.destinationAccountNumber,
+    remarks: r.remarks,
+    timestamp: r.timestamp,
+    createdAt: r.createdAt
+  }));
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
 
   return {
     accountId: account.account_id,
     accountNumber: account.account_number,
-    transactions: rows.map((r) => ({
-      ...r,
-      amount: Number(r.amount)
-    })),
+    accountType: account.account_type,
+    balance: Number(account.balance),
+    transactions: formattedTransactions,
+    items: formattedTransactions,
+    pagination: {
+      page: pageNum,
+      pageSize,
+      total,
+      totalItems: total,
+      totalPages
+    },
     page: pageNum,
     pageSize,
     total,
-    totalPages: Math.ceil(total / pageSize) || 1
+    totalItems: total,
+    totalPages
+  };
+}
+
+/**
+ * Retrieve global paginated transaction records across the bank (FR-21).
+ * Restricted to Bank Employees and Administrators for audit and oversight.
+ * Supports filtering by account number, account ID, transaction type, date range, and search.
+ *
+ * @param {object} params
+ * @param {number|string} [params.page=1]
+ * @param {number|string} [params.limit=20]
+ * @param {string} [params.accountNumber] - Filter by account number (source or destination)
+ * @param {number|string} [params.accountId] - Filter by account ID (source or destination)
+ * @param {string} [params.type] - Filter by type ('DEPOSIT'|'WITHDRAWAL'|'TRANSFER')
+ * @param {string} [params.startDate] - Start date/time filter
+ * @param {string} [params.endDate] - End date/time filter
+ * @param {string} [params.search] - Search by reference or account number
+ * @returns {Promise<object>} Paginated transaction records
+ */
+async function listBankTransactions({
+  page = 1,
+  limit = 20,
+  accountNumber,
+  accountId,
+  type,
+  startDate,
+  endDate,
+  search
+} = {}) {
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+  const offset = (pageNum - 1) * pageSize;
+
+  const whereClauses = [];
+  const queryParams = [];
+
+  if (accountNumber && typeof accountNumber === 'string' && accountNumber.trim() !== '') {
+    whereClauses.push('(sa.account_number = ? OR da.account_number = ?)');
+    queryParams.push(accountNumber.trim(), accountNumber.trim());
+  }
+
+  if (accountId) {
+    const parsedAccId = Number(accountId);
+    if (Number.isSafeInteger(parsedAccId) && parsedAccId > 0) {
+      whereClauses.push('(t.source_account_id = ? OR t.destination_account_id = ?)');
+      queryParams.push(parsedAccId, parsedAccId);
+    }
+  }
+
+  if (type && typeof type === 'string' && type.trim() !== '') {
+    const normalizedType = type.trim().toUpperCase();
+    if (['DEPOSIT', 'WITHDRAWAL', 'TRANSFER'].includes(normalizedType)) {
+      whereClauses.push('t.type = ?');
+      queryParams.push(normalizedType);
+    }
+  }
+
+  if (startDate) {
+    const parsedStart = new Date(startDate);
+    if (!isNaN(parsedStart.getTime())) {
+      whereClauses.push('t.created_at >= ?');
+      queryParams.push(parsedStart);
+    }
+  }
+
+  if (endDate) {
+    const parsedEnd = new Date(endDate);
+    if (!isNaN(parsedEnd.getTime())) {
+      if (typeof endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(endDate.trim())) {
+        parsedEnd.setHours(23, 59, 59, 999);
+      }
+      whereClauses.push('t.created_at <= ?');
+      queryParams.push(parsedEnd);
+    }
+  }
+
+  if (search && typeof search === 'string' && search.trim() !== '') {
+    const term = `%${search.trim()}%`;
+    whereClauses.push('(t.transaction_ref LIKE ? OR sa.account_number LIKE ? OR da.account_number LIKE ?)');
+    queryParams.push(term, term, term);
+  }
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+  // Count total matching transactions
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM bank_transactions t
+    LEFT JOIN accounts sa ON t.source_account_id = sa.account_id
+    LEFT JOIN accounts da ON t.destination_account_id = da.account_id
+    ${whereSql}
+  `;
+  const countRows = await query(countSql, queryParams);
+  const total = countRows[0]?.total || 0;
+
+  // Query transactions with deterministic sort
+  const selectSql = `
+    SELECT
+      t.transaction_id AS transactionId,
+      t.transaction_ref AS transactionRef,
+      t.type,
+      t.amount,
+      t.source_account_id AS sourceAccountId,
+      t.destination_account_id AS destinationAccountId,
+      sa.account_number AS sourceAccountNumber,
+      da.account_number AS destinationAccountNumber,
+      t.performed_by_user_id AS performedByUserId,
+      u.username AS performedByUsername,
+      t.remarks,
+      t.created_at AS timestamp,
+      t.created_at AS createdAt
+    FROM bank_transactions t
+    LEFT JOIN accounts sa ON t.source_account_id = sa.account_id
+    LEFT JOIN accounts da ON t.destination_account_id = da.account_id
+    LEFT JOIN users u ON t.performed_by_user_id = u.user_id
+    ${whereSql}
+    ORDER BY t.created_at DESC, t.transaction_id DESC
+    LIMIT ? OFFSET ?
+  `;
+
+  const rows = await query(selectSql, [...queryParams, pageSize, offset]);
+
+  const formattedTransactions = rows.map((r) => ({
+    transactionId: r.transactionId,
+    transactionRef: r.transactionRef,
+    transactionReference: r.transactionRef,
+    type: r.type,
+    amount: Number(r.amount),
+    sourceAccountId: r.sourceAccountId,
+    destinationAccountId: r.destinationAccountId,
+    sourceAccountNumber: r.sourceAccountNumber,
+    destinationAccountNumber: r.destinationAccountNumber,
+    performedByUserId: r.performedByUserId,
+    performedByUsername: r.performedByUsername,
+    remarks: r.remarks,
+    timestamp: r.timestamp,
+    createdAt: r.createdAt
+  }));
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+
+  return {
+    transactions: formattedTransactions,
+    items: formattedTransactions,
+    pagination: {
+      page: pageNum,
+      limit: pageSize,
+      pageSize,
+      total,
+      totalItems: total,
+      totalPages
+    },
+    page: pageNum,
+    limit: pageSize,
+    pageSize,
+    total,
+    totalItems: total,
+    totalPages
   };
 }
 
@@ -792,6 +1014,7 @@ module.exports = {
   executeDeposit,
   executeWithdrawal,
   getAccountTransactions,
+  listBankTransactions,
   executeTransfer,
   TRANSACTION_TYPE_PREFIXES
 };

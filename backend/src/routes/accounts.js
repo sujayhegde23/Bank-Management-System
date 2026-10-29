@@ -681,11 +681,46 @@ router.get('/:accountId/transactions', requireAuth, async (req, res, next) => {
       });
     }
 
+    // Validate pagination params if supplied (AC-3, NFR-18)
+    if (req.query.page !== undefined) {
+      const parsedPage = parseStrictAccountId(req.query.page);
+      if (parsedPage === null || parsedPage < 1) {
+        return res.status(400).json({
+          success: false,
+          errorCode: 'VAL_001',
+          message: 'Invalid page parameter. Must be a positive integer.',
+          error: {
+            code: 'VAL_001',
+            message: 'Invalid page parameter. Must be a positive integer.'
+          }
+        });
+      }
+    }
+
+    const sizeParam = req.query.size !== undefined ? req.query.size : req.query.limit;
+    if (sizeParam !== undefined) {
+      const parsedSize = parseStrictAccountId(sizeParam);
+      if (parsedSize === null || parsedSize < 1 || parsedSize > 100) {
+        return res.status(400).json({
+          success: false,
+          errorCode: 'VAL_001',
+          message: 'Invalid size parameter. Must be an integer between 1 and 100.',
+          error: {
+            code: 'VAL_001',
+            message: 'Invalid size parameter. Must be an integer between 1 and 100.'
+          }
+        });
+      }
+    }
+
     const result = await getAccountTransactions({
       accountId,
       user: req.user,
       page: req.query.page,
-      size: req.query.size || req.query.limit
+      size: sizeParam,
+      type: req.query.type,
+      startDate: req.query.startDate || req.query.from,
+      endDate: req.query.endDate || req.query.to
     });
 
     return res.status(200).json({
