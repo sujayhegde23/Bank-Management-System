@@ -1,19 +1,21 @@
 /**
  * ==============================================================================
- * Customer Fund Transfer Routes (Issue #9)
+ * Customer Fund Transfer Routes (Issue #9 & Feature 3)
  * ==============================================================================
  * Implements SRS FR-15, FR-16, FR-17, NFR-03, NFR-06, NFR-08, NFR-09, NFR-10, NFR-17,
- * and Architecture Specification §9, §10, §11.
+ * and Feature 3 Beneficiary Verification and Transfer Safety.
  *
  * Endpoints:
- * - POST /api/transfers (Customer initiates fund transfer between accounts; Customer only)
+ * - POST /api/transfers                     (Customer initiates fund transfer between accounts; Customer only)
+ * - POST /api/transfers/verify-beneficiary  (Verify beneficiary account details; Customer only)
+ * - GET  /api/transfers/verify-beneficiary  (Verify beneficiary account details query; Customer only)
  * ==============================================================================
  */
 
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { executeTransfer } = require('../services/transactionService');
+const { executeTransfer, verifyBeneficiary } = require('../services/transactionService');
 
 /**
  * Strict positive integer validator for account ID.
@@ -32,6 +34,62 @@ function parseStrictAccountId(val) {
 }
 
 /**
+ * POST /api/transfers/verify-beneficiary
+ * Verify destination beneficiary account details prior to transfer (Feature 3).
+ * Access: Authenticated CUSTOMER only.
+ */
+router.post('/verify-beneficiary', requireAuth, requireRole('CUSTOMER'), async (req, res, next) => {
+  try {
+    const { destinationAccount, destinationAccountNumber, destinationAccountId, sourceAccountId } = req.body || {};
+    const dest = destinationAccountId !== undefined && destinationAccountId !== null && destinationAccountId !== ''
+      ? destinationAccountId
+      : (destinationAccountNumber || destinationAccount);
+
+    const result = await verifyBeneficiary({
+      destinationAccount: dest,
+      sourceAccountId,
+      sessionCustomerId: req.user.customerId
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Beneficiary account verified successfully.',
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/transfers/verify-beneficiary
+ * Query-based beneficiary verification (Feature 3).
+ * Access: Authenticated CUSTOMER only.
+ */
+router.get('/verify-beneficiary', requireAuth, requireRole('CUSTOMER'), async (req, res, next) => {
+  try {
+    const { destinationAccount, destinationAccountNumber, destinationAccountId, sourceAccountId } = req.query || {};
+    const dest = destinationAccountId !== undefined && destinationAccountId !== null && destinationAccountId !== ''
+      ? destinationAccountId
+      : (destinationAccountNumber || destinationAccount);
+
+    const result = await verifyBeneficiary({
+      destinationAccount: dest,
+      sourceAccountId,
+      sessionCustomerId: req.user.customerId
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Beneficiary account verified successfully.',
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * POST /api/transfers
  * Customer fund transfer from an account owned by authenticated customer to another account (FR-15).
  * Access: Authenticated CUSTOMER only (AC-1, Architecture §9).
@@ -45,8 +103,20 @@ router.post('/', requireAuth, requireRole('CUSTOMER'), async (req, res, next) =>
       destinationAccount,
       amount,
       remarks,
+      idempotencyKey,
+      clientRequestId,
       _testFailurePoint
     } = req.body || {};
+
+    // Validate customer profile
+    if (!req.user.customerId) {
+      return res.status(403).json({
+        success: false,
+        errorCode: 'AUTH_002',
+        message: 'Customer profile required for transfer operations',
+        error: { code: 'AUTH_002', message: 'Customer profile required for transfer operations' }
+      });
+    }
 
     // Validate source account ID
     const parsedSourceAccountId = parseStrictAccountId(sourceAccountId);
@@ -92,6 +162,12 @@ router.post('/', requireAuth, requireRole('CUSTOMER'), async (req, res, next) =>
       });
     }
 
+    const effectiveIdempotencyKey = req.headers['idempotency-key'] ||
+      req.headers['x-idempotency-key'] ||
+      idempotencyKey ||
+      clientRequestId ||
+      null;
+
     const result = await executeTransfer({
       sourceAccountId: parsedSourceAccountId,
       destinationAccountId: targetDest,
@@ -100,6 +176,7 @@ router.post('/', requireAuth, requireRole('CUSTOMER'), async (req, res, next) =>
       remarks,
       performedByUserId: req.user.userId,
       sessionCustomerId: req.user.customerId,
+      idempotencyKey: effectiveIdempotencyKey,
       _testFailurePoint
     });
 
@@ -107,6 +184,15 @@ router.post('/', requireAuth, requireRole('CUSTOMER'), async (req, res, next) =>
       style: 'currency',
       currency: 'INR'
     }).format(result.amount);
+
+    if (result.isIdempotentReplay) {
+      return res.status(200).json({
+        success: true,
+        message: `Transfer request already processed. Reference: ${result.transactionRef}.`,
+        data: result,
+        idempotent: true
+      });
+    }
 
     return res.status(201).json({
       success: true,
@@ -119,4 +205,3 @@ router.post('/', requireAuth, requireRole('CUSTOMER'), async (req, res, next) =>
 });
 
 module.exports = router;
-

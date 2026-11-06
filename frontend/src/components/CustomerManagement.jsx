@@ -43,6 +43,17 @@ function IconUserCheck({ size = 18, className = '' }) {
   );
 }
 
+function IconUserX({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <line x1="17" y1="8" x2="22" y2="13" />
+      <line x1="22" y1="8" x2="17" y2="13" />
+    </svg>
+  );
+}
+
 function IconSearch({ size = 16, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -80,13 +91,7 @@ function IconEdit({ size = 15, className = '' }) {
   );
 }
 
-function IconShield({ size = 18, className = '' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
-}
+
 
 function IconX({ size = 18, className = '' }) {
   return (
@@ -116,11 +121,19 @@ function IconAlertCircle({ size = 18, className = '' }) {
   );
 }
 
+function maskPhoneNumber(phone) {
+  if (!phone) return '—';
+  const str = String(phone).trim();
+  if (str.length <= 4) return str;
+  return '••••••-' + str.slice(-4);
+}
+
 export default function CustomerManagement({ currentUser: _currentUser }) {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
   // Modals state
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -406,19 +419,42 @@ export default function CustomerManagement({ currentUser: _currentUser }) {
         </div>
 
         <div className="emp-stat-card">
-          <div className="stat-icon-wrapper info-icon">
-            <IconShield size={22} />
+          <div className="stat-icon-wrapper inactive-icon">
+            <IconUserX size={22} />
           </div>
           <div className="stat-details">
-            <span className="stat-label">Data Privacy</span>
-            <span className="stat-value" style={{ fontSize: '1.25rem', color: '#c084fc' }}>ENFORCED</span>
-            <span className="stat-desc">Horizontal isolation (NFR-03)</span>
+            <span className="stat-label">Inactive Customers</span>
+            <span className="stat-value text-danger">{stats.inactive}</span>
+            <span className="stat-desc">Deactivated retail accounts</span>
           </div>
         </div>
       </div>
 
-      {/* Search Bar */}
+      {/* Search Bar & Status Filter Pills */}
       <div className="table-controls-card">
+        <div className="cust-filter-pills-row">
+          <button
+            type="button"
+            className={`filter-pill ${statusFilter === 'ALL' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('ALL')}
+          >
+            All ({customers.length})
+          </button>
+          <button
+            type="button"
+            className={`filter-pill ${statusFilter === 'ACTIVE' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('ACTIVE')}
+          >
+            Active ({stats.active})
+          </button>
+          <button
+            type="button"
+            className={`filter-pill ${statusFilter === 'INACTIVE' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('INACTIVE')}
+          >
+            Inactive ({stats.inactive})
+          </button>
+        </div>
         <div className="search-input-wrapper">
           <IconSearch size={16} className="search-icon" />
           <input
@@ -471,12 +507,10 @@ export default function CustomerManagement({ currentUser: _currentUser }) {
               <thead>
                 <tr>
                   <th>Customer ID</th>
-                  <th>Full Name &amp; Username</th>
-                  <th>Date of Birth</th>
+                  <th>Customer Name</th>
                   <th>Phone</th>
                   <th>Email</th>
-                  <th>Address</th>
-                  <th>Status</th>
+                  <th>Account Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -492,17 +526,11 @@ export default function CustomerManagement({ currentUser: _currentUser }) {
                         <span className="cust-username-tag font-mono">@{cust.username}</span>
                       </div>
                     </td>
-                    <td className="font-mono" style={{ fontSize: '0.825rem', color: '#cbd5e1' }}>
-                      {cust.dateOfBirth ? cust.dateOfBirth.slice(0, 10) : '—'}
-                    </td>
                     <td className="font-mono" style={{ fontSize: '0.825rem' }}>
-                      {cust.phone}
+                      {maskPhoneNumber(cust.phone)}
                     </td>
                     <td style={{ color: '#94a3b8', fontSize: '0.825rem' }}>
                       {cust.email}
-                    </td>
-                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.825rem', color: '#94a3b8' }} title={cust.address}>
-                      {cust.address}
                     </td>
                     <td>
                       <span className={`status-badge-custom badge-${String(cust.userStatus).toLowerCase()}`}>

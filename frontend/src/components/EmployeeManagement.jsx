@@ -3,7 +3,10 @@ import {
   getEmployees,
   createEmployee,
   updateEmployee,
-  updateEmployeeStatus
+  updateEmployeeStatus,
+  getEmployeeOverview,
+  getEmployeeActivities,
+  revokeEmployeeSessions
 } from '../services/api';
 import './EmployeeManagement.css';
 
@@ -50,6 +53,45 @@ function IconUserPlus({ size = 18, className = '' }) {
       <circle cx="9" cy="7" r="4" />
       <line x1="19" y1="8" x2="19" y2="14" />
       <line x1="22" y1="11" x2="16" y2="11" />
+    </svg>
+  );
+}
+
+function IconClock({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+function IconLogIn({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <polyline points="10 17 15 12 10 7" />
+      <line x1="15" y1="12" x2="3" y2="12" />
+    </svg>
+  );
+}
+
+function IconLogOut({ size = 15, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
+function IconHistory({ size = 15, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l4 2" />
     </svg>
   );
 }
@@ -147,14 +189,39 @@ function IconEyeOff({ size = 16, className = '' }) {
 }
 
 /* ==============================================================================
-   Validation Patterns
+   Validation Patterns & Formatting Helpers
    ============================================================================== */
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^[\d\s+\-().]{5,20}$/;
 const USERNAME_REGEX = /^[a-zA-Z0-9._-]{3,50}$/;
 
+function formatDateTime(isoString) {
+  if (!isoString) return null;
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return null;
+  }
+}
+
 export default function EmployeeManagement({ currentUser }) {
   const [employees, setEmployees] = useState([]);
+  const [overviewStats, setOverviewStats] = useState({
+    totalStaff: 0,
+    activeStaff: 0,
+    inactiveStaff: 0,
+    recentlyAdded: 0,
+    loggedInToday: 0
+  });
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [fetchError, setFetchError] = useState(null);
@@ -180,15 +247,21 @@ export default function EmployeeManagement({ currentUser }) {
 
   // View / Edit Employee Modal
   const [editingEmployee, setEditingEmployee] = useState(null);
+  const [modalTab, setModalTab] = useState('profile'); // 'profile' | 'activity'
   const [editForm, setEditForm] = useState({
     fullName: '',
     email: '',
     phone: ''
   });
   const [editErrors, setEditErrors] = useState({});
+  const [activities, setActivities] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
 
   // Status Change Confirmation Dialog
   const [statusDialog, setStatusDialog] = useState(null);
+
+  // Revoke Sessions Confirmation Dialog
+  const [revokeDialog, setRevokeDialog] = useState(null);
 
   // References
   const isMountedRef = useRef(true);
@@ -196,10 +269,12 @@ export default function EmployeeManagement({ currentUser }) {
   const triggerElementRef = useRef(null);
   const editModalRef = useRef(null);
   const statusModalRef = useRef(null);
+  const revokeModalRef = useRef(null);
   const addModalRef = useRef(null);
   const addNameInputRef = useRef(null);
   const editNameInputRef = useRef(null);
   const statusConfirmBtnRef = useRef(null);
+  const revokeConfirmBtnRef = useRef(null);
 
   // Auto-dismiss toast after 5 seconds
   useEffect(() => {
@@ -218,7 +293,7 @@ export default function EmployeeManagement({ currentUser }) {
   }, []);
 
   /**
-   * Fetch employees list from backend API
+   * Fetch employees list and overview statistics from backend API
    */
   const loadEmployees = useCallback(async () => {
     const requestId = ++activeRequestIdRef.current;
@@ -226,17 +301,43 @@ export default function EmployeeManagement({ currentUser }) {
     setFetchError(null);
 
     try {
-      const list = await getEmployees();
+      const [listResult, overviewResult] = await Promise.allSettled([
+        getEmployees(),
+        getEmployeeOverview()
+      ]);
+
       if (!isMountedRef.current || requestId !== activeRequestIdRef.current) {
-        return list;
+        return;
       }
-      setEmployees(Array.isArray(list) ? list : []);
-      return list;
+
+      if (listResult.status === 'fulfilled') {
+        const rawList = listResult.value;
+        const list = Array.isArray(rawList) ? rawList : (rawList?.data || []);
+        setEmployees(list);
+
+        // If backend returned summary inside getEmployees response
+        if (rawList?.summary) {
+          setOverviewStats(rawList.summary);
+        }
+      } else {
+        throw listResult.reason;
+      }
+
+      if (overviewResult.status === 'fulfilled' && overviewResult.value) {
+        const stats = overviewResult.value;
+        setOverviewStats((prev) => ({
+          ...prev,
+          totalStaff: stats.totalStaff ?? prev.totalStaff,
+          activeStaff: stats.activeStaff ?? prev.activeStaff,
+          inactiveStaff: stats.inactiveStaff ?? prev.inactiveStaff,
+          recentlyAdded: stats.recentlyAdded ?? prev.recentlyAdded,
+          loggedInToday: stats.loggedInToday ?? prev.loggedInToday
+        }));
+      }
     } catch (err) {
       if (isMountedRef.current && requestId === activeRequestIdRef.current) {
         setFetchError(err.message || 'Unable to connect to employee database service.');
       }
-      throw err;
     } finally {
       if (isMountedRef.current && requestId === activeRequestIdRef.current) {
         setLoading(false);
@@ -259,13 +360,19 @@ export default function EmployeeManagement({ currentUser }) {
     };
   }, [currentUser, loadEmployees]);
 
-  // Derived statistics
+  // Derived statistics (fallback if overview call fails)
   const stats = useMemo(() => {
     const total = employees.length;
     const active = employees.filter((e) => e.status === 'ACTIVE').length;
     const inactive = total - active;
-    return { total, active, inactive };
-  }, [employees]);
+    return {
+      total: overviewStats.totalStaff || total,
+      active: overviewStats.activeStaff || active,
+      inactive: overviewStats.inactiveStaff || inactive,
+      recentlyAdded: overviewStats.recentlyAdded || 0,
+      loggedInToday: overviewStats.loggedInToday || 0
+    };
+  }, [employees, overviewStats]);
 
   // Filtered employees
   const filteredEmployees = useMemo(() => {
@@ -398,21 +505,39 @@ export default function EmployeeManagement({ currentUser }) {
     }
   };
 
-  // Open Edit Modal
-  const handleOpenEdit = (emp, e) => {
+  // Open Edit / Details Modal
+  const handleOpenEdit = async (emp, e) => {
     triggerElementRef.current = e?.currentTarget || document.activeElement;
     setEditingEmployee(emp);
+    setModalTab('profile');
     setEditForm({
       fullName: emp.fullName || '',
       email: emp.email || '',
       phone: emp.phone || ''
     });
     setEditErrors({});
+    setActivities([]);
+
+    // Fetch employee activity history in parallel
+    setActivitiesLoading(true);
+    try {
+      const actList = await getEmployeeActivities(emp.employeeId);
+      if (isMountedRef.current) {
+        setActivities(actList);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch employee activities:', err);
+    } finally {
+      if (isMountedRef.current) {
+        setActivitiesLoading(false);
+      }
+    }
   };
 
   const handleCloseEdit = useCallback(() => {
     setEditingEmployee(null);
     setEditErrors({});
+    setActivities([]);
     setTimeout(() => {
       triggerElementRef.current?.focus();
     }, 0);
@@ -483,7 +608,7 @@ export default function EmployeeManagement({ currentUser }) {
     }
   };
 
-  // Open Status Dialog
+  // Open Status Dialog (Activate / Deactivate)
   const handleOpenStatusDialog = (emp, targetStatus, e) => {
     triggerElementRef.current = e?.currentTarget || document.activeElement;
     setStatusDialog({
@@ -523,7 +648,7 @@ export default function EmployeeManagement({ currentUser }) {
       await loadEmployees();
       setToast({
         type: 'success',
-        message: `Account for "${employee.fullName}" has been successfully ${actionWord}.`
+        message: `Account for "${employee.fullName}" has been successfully ${actionWord}.${nextStatus === 'INACTIVE' ? ' Active sessions were invalidated.' : ''}`
       });
     } catch (refreshErr) {
       setToast({
@@ -535,30 +660,79 @@ export default function EmployeeManagement({ currentUser }) {
     }
   };
 
+  // Open Revoke Sessions Dialog
+  const handleOpenRevokeDialog = (emp, e) => {
+    triggerElementRef.current = e?.currentTarget || document.activeElement;
+    setRevokeDialog({
+      employee: emp
+    });
+  };
+
+  const handleCloseRevokeDialog = useCallback(() => {
+    setRevokeDialog(null);
+    setTimeout(() => {
+      triggerElementRef.current?.focus();
+    }, 0);
+  }, []);
+
+  // Confirm Revoke Sessions
+  const handleConfirmRevokeSessions = async () => {
+    if (!revokeDialog) return;
+    const { employee } = revokeDialog;
+
+    setActionLoading(true);
+
+    try {
+      const res = await revokeEmployeeSessions(employee.employeeId);
+      const count = res?.data?.revokedSessionsCount ?? res?.revokedSessionsCount ?? 0;
+      handleCloseRevokeDialog();
+
+      setToast({
+        type: 'success',
+        message: `Active sessions for "${employee.fullName}" have been revoked (${count} session(s) terminated).`
+      });
+
+      // Refresh list to update any state
+      await loadEmployees();
+    } catch (err) {
+      setToast({
+        type: 'error',
+        message: err.message || 'Failed to revoke employee sessions.'
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Focus and keyboard accessibility
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && !actionLoading) {
         if (showAddModal) handleCloseAddModal();
-        else if (editingEmployee) handleCloseEdit();
+        else if (revokeDialog) handleCloseRevokeDialog();
         else if (statusDialog) handleCloseStatusDialog();
+        else if (editingEmployee) handleCloseEdit();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showAddModal, editingEmployee, statusDialog, actionLoading, handleCloseAddModal, handleCloseEdit, handleCloseStatusDialog]);
+  }, [showAddModal, editingEmployee, statusDialog, revokeDialog, actionLoading, handleCloseAddModal, handleCloseEdit, handleCloseStatusDialog, handleCloseRevokeDialog]);
 
   useEffect(() => {
     if (showAddModal) addNameInputRef.current?.focus();
   }, [showAddModal]);
 
   useEffect(() => {
-    if (editingEmployee) editNameInputRef.current?.focus();
-  }, [editingEmployee]);
+    if (editingEmployee && modalTab === 'profile') editNameInputRef.current?.focus();
+  }, [editingEmployee, modalTab]);
 
   useEffect(() => {
     if (statusDialog) statusConfirmBtnRef.current?.focus();
   }, [statusDialog]);
+
+  useEffect(() => {
+    if (revokeDialog) revokeConfirmBtnRef.current?.focus();
+  }, [revokeDialog]);
 
   // Dialog tab-trap helper
   const handleDialogKeyDown = (e, modalRef) => {
@@ -612,9 +786,9 @@ export default function EmployeeManagement({ currentUser }) {
       {/* Page Header */}
       <div className="emp-page-header">
         <div>
-          <h1 className="emp-page-title">Employee Management</h1>
+          <h1 className="emp-page-title">Employee Management &amp; Access Oversight</h1>
           <p className="emp-page-subtitle">
-            Manage employee accounts, access permissions, and account status.
+            Oversee staff credentials, monitor active sessions, and maintain banking access controls.
           </p>
         </div>
         <div className="emp-page-actions">
@@ -670,7 +844,29 @@ export default function EmployeeManagement({ currentUser }) {
           <div className="stat-details">
             <span className="stat-label">Inactive Staff</span>
             <span className="stat-value text-danger">{stats.inactive}</span>
-            <span className="stat-desc">Access temporarily revoked</span>
+            <span className="stat-desc">Access suspended</span>
+          </div>
+        </div>
+
+        <div className="emp-stat-card card-recent">
+          <div className="stat-icon-wrapper recent-icon">
+            <IconClock size={22} />
+          </div>
+          <div className="stat-details">
+            <span className="stat-label">Recently Added</span>
+            <span className="stat-value text-purple">{stats.recentlyAdded}</span>
+            <span className="stat-desc">Joined past 7 days</span>
+          </div>
+        </div>
+
+        <div className="emp-stat-card card-login">
+          <div className="stat-icon-wrapper login-icon">
+            <IconLogIn size={22} />
+          </div>
+          <div className="stat-details">
+            <span className="stat-label">Logged In Today</span>
+            <span className="stat-value text-cyan">{stats.loggedInToday}</span>
+            <span className="stat-desc">Active today (FR-24)</span>
           </div>
         </div>
       </div>
@@ -811,18 +1007,20 @@ export default function EmployeeManagement({ currentUser }) {
             <table className="emp-table-custom" id="emp-data-table">
               <thead>
                 <tr>
-                  <th style={{ width: '80px' }}>ID</th>
-                  <th>Staff Member</th>
-                  <th>Username</th>
-                  <th>Phone</th>
-                  <th>Role</th>
-                  <th>Account Status</th>
-                  <th style={{ textAlign: 'right', width: '210px' }}>Actions</th>
+                  <th style={{ width: '50px' }}>ID</th>
+                  <th style={{ minWidth: '155px' }}>Staff Member</th>
+                  <th style={{ minWidth: '95px' }}>Username</th>
+                  <th style={{ minWidth: '100px' }}>Phone</th>
+                  <th style={{ minWidth: '80px' }}>Role</th>
+                  <th style={{ minWidth: '80px' }}>Status</th>
+                  <th style={{ minWidth: '110px' }}>Last Login</th>
+                  <th style={{ textAlign: 'right', minWidth: '220px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredEmployees.map((emp) => {
                   const isActive = emp.status === 'ACTIVE';
+                  const formattedLastLogin = formatDateTime(emp.lastLogin);
                   return (
                     <tr key={emp.employeeId} id={`emp-row-${emp.employeeId}`}>
                       <td>
@@ -855,6 +1053,17 @@ export default function EmployeeManagement({ currentUser }) {
                           <span>{emp.status}</span>
                         </span>
                       </td>
+                      <td>
+                        <div className="emp-last-login-box">
+                          {formattedLastLogin ? (
+                            <span className="emp-last-login-date" title={emp.lastLogin}>
+                              {formattedLastLogin}
+                            </span>
+                          ) : (
+                            <span className="emp-never-login">Never</span>
+                          )}
+                        </div>
+                      </td>
                       <td style={{ textAlign: 'right' }}>
                         <div className="emp-action-buttons">
                           <button
@@ -863,7 +1072,7 @@ export default function EmployeeManagement({ currentUser }) {
                             className="btn-action btn-edit"
                             onClick={(e) => handleOpenEdit(emp, e)}
                             disabled={actionLoading}
-                            title="View and edit employee details"
+                            title="View profile, audit activities & edit details"
                           >
                             <IconEdit size={14} />
                             <span>View / Edit</span>
@@ -875,7 +1084,7 @@ export default function EmployeeManagement({ currentUser }) {
                               className="btn-action btn-deactivate"
                               onClick={(e) => handleOpenStatusDialog(emp, 'INACTIVE', e)}
                               disabled={actionLoading}
-                              title="Deactivate employee access"
+                              title="Deactivate employee access and terminate active sessions"
                             >
                               <IconUserX size={14} />
                               <span>Deactivate</span>
@@ -893,6 +1102,17 @@ export default function EmployeeManagement({ currentUser }) {
                               <span>Activate</span>
                             </button>
                           )}
+                          <button
+                            id={`revoke-emp-btn-${emp.employeeId}`}
+                            type="button"
+                            className="btn-action btn-revoke"
+                            onClick={(e) => handleOpenRevokeDialog(emp, e)}
+                            disabled={actionLoading}
+                            title="Revoke active sessions for this employee"
+                          >
+                            <IconLogOut size={13} />
+                            <span>Revoke</span>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1096,7 +1316,7 @@ export default function EmployeeManagement({ currentUser }) {
       )}
 
       {/* ==============================================================================
-          VIEW / EDIT EMPLOYEE MODAL
+          VIEW / EDIT EMPLOYEE MODAL (PROFILE & AUDITED ACTIVITIES)
           ============================================================================== */}
       {editingEmployee && (
         <div
@@ -1109,7 +1329,7 @@ export default function EmployeeManagement({ currentUser }) {
         >
           <div
             ref={editModalRef}
-            className="custom-modal-dialog"
+            className="custom-modal-dialog custom-modal-large"
             role="dialog"
             aria-modal="true"
             aria-labelledby="edit-modal-title"
@@ -1121,7 +1341,7 @@ export default function EmployeeManagement({ currentUser }) {
                   <IconEdit size={18} />
                 </div>
                 <div>
-                  <h3 id="edit-modal-title">Employee Profile &amp; Details</h3>
+                  <h3 id="edit-modal-title">Employee Profile &amp; Oversight</h3>
                   <p className="modal-header-desc">
                     Staff ID #{editingEmployee.employeeId} &bull; {editingEmployee.username}
                   </p>
@@ -1138,121 +1358,220 @@ export default function EmployeeManagement({ currentUser }) {
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} noValidate>
+            {/* Modal Tabs Header */}
+            <div className="modal-tab-nav">
+              <button
+                type="button"
+                className={`modal-tab-btn ${modalTab === 'profile' ? 'active' : ''}`}
+                onClick={() => setModalTab('profile')}
+              >
+                <IconEdit size={14} />
+                <span>Profile &amp; Credentials</span>
+              </button>
+              <button
+                type="button"
+                className={`modal-tab-btn ${modalTab === 'activity' ? 'active' : ''}`}
+                onClick={() => setModalTab('activity')}
+              >
+                <IconHistory size={14} />
+                <span>Recent Audited Activities ({activities.length})</span>
+              </button>
+            </div>
+
+            {modalTab === 'profile' && (
+              <form onSubmit={handleSaveEdit} noValidate>
+                <div className="custom-modal-body">
+                  {editErrors.general && (
+                    <div className="form-general-error" role="alert">
+                      <IconAlertCircle size={16} />
+                      <span>{editErrors.general}</span>
+                    </div>
+                  )}
+
+                  {/* Read-Only Identity Card */}
+                  <div className="identity-summary-card">
+                    <div className="identity-row">
+                      <div className="identity-item">
+                        <span className="identity-label">Staff ID</span>
+                        <span className="identity-value">#{editingEmployee.employeeId}</span>
+                      </div>
+                      <div className="identity-item">
+                        <span className="identity-label">System User ID</span>
+                        <span className="identity-value">#{editingEmployee.userId}</span>
+                      </div>
+                      <div className="identity-item">
+                        <span className="identity-label">Assigned Role</span>
+                        <span className="identity-value badge-role">
+                          <IconShield size={12} />
+                          {editingEmployee.role}
+                        </span>
+                      </div>
+                      <div className="identity-item">
+                        <span className="identity-label">Account Status</span>
+                        <span className={`badge-status ${editingEmployee.status === 'ACTIVE' ? 'status-active' : 'status-inactive'}`}>
+                          <span className="status-dot" />
+                          {editingEmployee.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="identity-row" style={{ marginTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.75rem' }}>
+                      <div className="identity-item">
+                        <span className="identity-label">Account Created</span>
+                        <span className="identity-value-sub">
+                          {formatDateTime(editingEmployee.createdAt) || '—'}
+                        </span>
+                      </div>
+                      <div className="identity-item">
+                        <span className="identity-label">Last Login Timestamp</span>
+                        <span className="identity-value-sub">
+                          {formatDateTime(editingEmployee.lastLogin) || 'Never logged in'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="identity-footer-actions">
+                      <button
+                        type="button"
+                        className="btn-action btn-revoke"
+                        onClick={(e) => handleOpenRevokeDialog(editingEmployee, e)}
+                        disabled={actionLoading}
+                      >
+                        <IconLogOut size={13} />
+                        <span>Revoke Active Sessions</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Editable Profile Inputs */}
+                  <div className="form-field-group">
+                    <label className="field-label" htmlFor="edit-emp-name">
+                      Full Legal Name <span className="required-star">*</span>
+                    </label>
+                    <input
+                      ref={editNameInputRef}
+                      id="edit-emp-name"
+                      type="text"
+                      className={`field-input ${editErrors.fullName ? 'has-error' : ''}`}
+                      value={editForm.fullName}
+                      onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                      disabled={actionLoading}
+                    />
+                    {editErrors.fullName && (
+                      <span className="field-error-msg">{editErrors.fullName}</span>
+                    )}
+                  </div>
+
+                  <div className="form-grid-two">
+                    <div className="form-field-group">
+                      <label className="field-label" htmlFor="edit-emp-email">
+                        Email Address <span className="required-star">*</span>
+                      </label>
+                      <input
+                        id="edit-emp-email"
+                        type="email"
+                        className={`field-input ${editErrors.email ? 'has-error' : ''}`}
+                        value={editForm.email}
+                        onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                        disabled={actionLoading}
+                      />
+                      {editErrors.email && (
+                        <span className="field-error-msg">{editErrors.email}</span>
+                      )}
+                    </div>
+
+                    <div className="form-field-group">
+                      <label className="field-label" htmlFor="edit-emp-phone">
+                        Phone Number <span className="required-star">*</span>
+                      </label>
+                      <input
+                        id="edit-emp-phone"
+                        type="tel"
+                        className={`field-input ${editErrors.phone ? 'has-error' : ''}`}
+                        value={editForm.phone}
+                        onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                        disabled={actionLoading}
+                      />
+                      {editErrors.phone && (
+                        <span className="field-error-msg">{editErrors.phone}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="custom-modal-footer">
+                  <button
+                    type="button"
+                    className="btn-secondary-custom"
+                    onClick={handleCloseEdit}
+                    disabled={actionLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    id="save-employee-edit-btn"
+                    type="submit"
+                    className="btn-primary-custom"
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? 'Saving Changes...' : 'Save Profile Changes'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {modalTab === 'activity' && (
               <div className="custom-modal-body">
-                {editErrors.general && (
-                  <div className="form-general-error" role="alert">
-                    <IconAlertCircle size={16} />
-                    <span>{editErrors.general}</span>
+                {activitiesLoading ? (
+                  <div className="emp-table-skeleton" style={{ padding: '1rem 0' }}>
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="skeleton-row" style={{ height: '40px' }} />
+                    ))}
+                  </div>
+                ) : activities.length === 0 ? (
+                  <div className="emp-table-empty" style={{ padding: '2rem 1rem' }}>
+                    <div className="empty-icon-circle">
+                      <IconHistory size={24} />
+                    </div>
+                    <h4>No recent activity recorded</h4>
+                    <p style={{ margin: '0.25rem 0 0 0' }}>
+                      There are no audited actions logged for this staff member yet.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="activity-trail-list">
+                    {activities.map((act) => (
+                      <div key={act.auditId} className="activity-trail-item">
+                        <div className="activity-header">
+                          <span className="activity-action-tag">{act.actionType}</span>
+                          <span className="activity-time">{formatDateTime(act.createdAt)}</span>
+                        </div>
+                        <div className="activity-desc">{act.description}</div>
+                        <div className="activity-footer">
+                          <span className={`activity-result-badge ${act.result === 'SUCCESS' ? 'result-success' : 'result-failure'}`}>
+                            {act.result}
+                          </span>
+                          {act.targetEntityType && (
+                            <span className="activity-target">
+                              Target: {act.targetEntityType} #{act.targetEntityId}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
-
-                {/* Read-Only Identity Card */}
-                <div className="identity-summary-card">
-                  <div className="identity-row">
-                    <div className="identity-item">
-                      <span className="identity-label">Staff ID</span>
-                      <span className="identity-value">#{editingEmployee.employeeId}</span>
-                    </div>
-                    <div className="identity-item">
-                      <span className="identity-label">System User ID</span>
-                      <span className="identity-value">#{editingEmployee.userId}</span>
-                    </div>
-                    <div className="identity-item">
-                      <span className="identity-label">Assigned Role</span>
-                      <span className="identity-value badge-role">
-                        <IconShield size={12} />
-                        {editingEmployee.role}
-                      </span>
-                    </div>
-                    <div className="identity-item">
-                      <span className="identity-label">Current Status</span>
-                      <span className={`badge-status ${editingEmployee.status === 'ACTIVE' ? 'status-active' : 'status-inactive'}`}>
-                        <span className="status-dot" />
-                        {editingEmployee.status}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="identity-note">
-                    🔒 System identity identifiers and roles are immutable to uphold database referential integrity.
-                  </div>
-                </div>
-
-                {/* Editable Profile Inputs */}
-                <div className="form-field-group">
-                  <label className="field-label" htmlFor="edit-emp-name">
-                    Full Legal Name <span className="required-star">*</span>
-                  </label>
-                  <input
-                    ref={editNameInputRef}
-                    id="edit-emp-name"
-                    type="text"
-                    className={`field-input ${editErrors.fullName ? 'has-error' : ''}`}
-                    value={editForm.fullName}
-                    onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
-                    disabled={actionLoading}
-                  />
-                  {editErrors.fullName && (
-                    <span className="field-error-msg">{editErrors.fullName}</span>
-                  )}
-                </div>
-
-                <div className="form-grid-two">
-                  <div className="form-field-group">
-                    <label className="field-label" htmlFor="edit-emp-email">
-                      Email Address <span className="required-star">*</span>
-                    </label>
-                    <input
-                      id="edit-emp-email"
-                      type="email"
-                      className={`field-input ${editErrors.email ? 'has-error' : ''}`}
-                      value={editForm.email}
-                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                      disabled={actionLoading}
-                    />
-                    {editErrors.email && (
-                      <span className="field-error-msg">{editErrors.email}</span>
-                    )}
-                  </div>
-
-                  <div className="form-field-group">
-                    <label className="field-label" htmlFor="edit-emp-phone">
-                      Phone Number <span className="required-star">*</span>
-                    </label>
-                    <input
-                      id="edit-emp-phone"
-                      type="tel"
-                      className={`field-input ${editErrors.phone ? 'has-error' : ''}`}
-                      value={editForm.phone}
-                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                      disabled={actionLoading}
-                    />
-                    {editErrors.phone && (
-                      <span className="field-error-msg">{editErrors.phone}</span>
-                    )}
-                  </div>
+                <div className="custom-modal-footer" style={{ marginTop: '1.25rem', paddingBottom: 0 }}>
+                  <button
+                    type="button"
+                    className="btn-secondary-custom"
+                    onClick={handleCloseEdit}
+                  >
+                    Close
+                  </button>
                 </div>
               </div>
-
-              <div className="custom-modal-footer">
-                <button
-                  type="button"
-                  className="btn-secondary-custom"
-                  onClick={handleCloseEdit}
-                  disabled={actionLoading}
-                >
-                  Cancel
-                </button>
-                <button
-                  id="save-employee-edit-btn"
-                  type="submit"
-                  className="btn-primary-custom"
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? 'Saving Changes...' : 'Save Profile Changes'}
-                </button>
-              </div>
-            </form>
+            )}
           </div>
         </div>
       )}
@@ -1318,8 +1637,8 @@ export default function EmployeeManagement({ currentUser }) {
                   <div className="deactivation-warning-callout">
                     <IconAlertTriangle size={18} className="warning-callout-icon" />
                     <div className="warning-callout-text">
-                      <strong>Immediate Session Invalidation:</strong> Deactivation immediately marks{' '}
-                      <code>users.status = 'INACTIVE'</code> in the database. The employee will be rejected from logging in, and any active session will be invalidated on their next request.
+                      <strong>Immediate Session Cutoff:</strong> Deactivation marks{' '}
+                      <code>users.status = 'INACTIVE'</code> and immediately revokes all active sessions from the server session store. The employee is blocked from logging in, and any in-flight session is terminated on their next request.
                     </div>
                   </div>
                 </div>
@@ -1358,6 +1677,86 @@ export default function EmployeeManagement({ currentUser }) {
                   : statusDialog.nextStatus === 'ACTIVE'
                   ? 'Confirm Reactivation'
                   : 'Confirm Deactivation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==============================================================================
+          REVOKE SESSIONS CONFIRMATION DIALOG (FEATURE 3)
+          ============================================================================== */}
+      {revokeDialog && (
+        <div
+          className="custom-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !actionLoading) {
+              handleCloseRevokeDialog();
+            }
+          }}
+        >
+          <div
+            ref={revokeModalRef}
+            className="custom-modal-dialog confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="revoke-dialog-title"
+            onKeyDown={(e) => handleDialogKeyDown(e, revokeModalRef)}
+          >
+            <div className="custom-modal-header">
+              <div className="modal-title-group">
+                <div className="modal-icon-badge badge-icon-warning">
+                  <IconLogOut size={20} />
+                </div>
+                <div>
+                  <h3 id="revoke-dialog-title">Revoke Active Sessions</h3>
+                  <p className="modal-header-desc">
+                    Staff ID #{revokeDialog.employee.employeeId} &bull; {revokeDialog.employee.fullName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="modal-close-icon"
+                onClick={handleCloseRevokeDialog}
+                disabled={actionLoading}
+                aria-label="Close modal"
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            <div className="custom-modal-body">
+              <p className="dialog-main-text">
+                Revoke all active browser sessions for{' '}
+                <strong>{revokeDialog.employee.fullName}</strong> (<code>{revokeDialog.employee.username}</code>)?
+              </p>
+              <div className="deactivation-warning-callout" style={{ background: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.25)' }}>
+                <IconAlertTriangle size={18} className="warning-callout-icon" style={{ color: '#fbbf24' }} />
+                <div className="warning-callout-text" style={{ color: '#fde68a' }}>
+                  <strong>Immediate Session Invalidation:</strong> All active sessions for this user will be purged from the server session store. Their browser session cookies will immediately become invalid, requiring them to re-authenticate with their credentials.
+                </div>
+              </div>
+            </div>
+
+            <div className="custom-modal-footer">
+              <button
+                type="button"
+                className="btn-secondary-custom"
+                onClick={handleCloseRevokeDialog}
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                ref={revokeConfirmBtnRef}
+                id="confirm-revoke-sessions-btn"
+                type="button"
+                className="btn-warning-custom"
+                onClick={handleConfirmRevokeSessions}
+                disabled={actionLoading}
+              >
+                {actionLoading ? 'Revoking Sessions...' : 'Confirm Revoke Sessions'}
               </button>
             </div>
           </div>

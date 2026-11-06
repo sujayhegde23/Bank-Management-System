@@ -8,7 +8,9 @@
     "dev": "node --watch src/server.js",
     "test": "node --test --test-concurrency=1 tests/**/*.test.js",
     "db:init": "node ../database/init.js",
-    "db:init:seed": "node ../database/init.js --seed"
+    "db:init:seed": "node ../database/init.js --seed",
+    "db:init:mongo": "node ../database/initMongo.js",
+    "db:clean:transactions": "node src/scripts/cleanPreviousTransactions.js"
   },
   "keywords": [
     "banking",
@@ -24,6 +26,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-session": "^1.19.0",
+    "mongodb": "^7.8.0",
     "mysql2": "^3.12.0"
   },
   "devDependencies": {

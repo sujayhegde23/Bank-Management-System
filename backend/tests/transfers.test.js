@@ -129,6 +129,14 @@ describe('Customer Fund Transfer Suite (Issue #9)', () => {
     try {
       if (createdAccountIds.length > 0) {
         const placeholders = createdAccountIds.map(() => '?').join(',');
+        // Delete outbox events first to satisfy foreign key constraints (ON DELETE RESTRICT)
+        await pool.execute(
+          `DELETE FROM fraud_outbox_events WHERE transaction_id IN (
+             SELECT transaction_id FROM bank_transactions
+             WHERE source_account_id IN (${placeholders}) OR destination_account_id IN (${placeholders})
+           )`,
+          [...createdAccountIds, ...createdAccountIds]
+        ).catch(() => {});
         // Clean child transactions first to satisfy foreign key constraints
         await pool.execute(
           `DELETE FROM bank_transactions

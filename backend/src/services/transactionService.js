@@ -16,6 +16,8 @@
 
 const crypto = require('crypto');
 const { query, withTransaction } = require('../config/db');
+const { recordAuditEvent } = require('./auditService');
+const { recordOutboxEvent } = require('./fraud/outboxRepository');
 
 // Type prefixes for human-readable transaction references
 const TRANSACTION_TYPE_PREFIXES = {
@@ -140,104 +142,158 @@ async function generateUniqueTransactionRef(type = 'DEPOSIT', dbConn = null, max
  * @returns {Promise<object>} Created transaction and updated account balance
  */
 async function executeDeposit({ accountId, amount, remarks = null, performedByUserId, _testFailurePoint = null }) {
-  // Pre-validate amount before opening database transaction to minimize lock hold duration (NFR-07)
-  const normalizedAmount = validateMonetaryAmount(amount);
+  try {
+    // Pre-validate amount before opening database transaction to minimize lock hold duration (NFR-07)
+    const normalizedAmount = validateMonetaryAmount(amount);
 
-  return await withTransaction(async (conn) => {
-    // 1. Lock account row with SELECT ... FOR UPDATE (prevents concurrent status/balance races)
-    const [rows] = await conn.execute(
-      `SELECT account_id, account_number, customer_id, account_type, balance, status
-       FROM accounts
-       WHERE account_id = ?
-       FOR UPDATE`,
-      [accountId]
-    );
+    const result = await withTransaction(async (conn) => {
+      // 1. Lock account row with SELECT ... FOR UPDATE (prevents concurrent status/balance races)
+      const [rows] = await conn.execute(
+        `SELECT account_id, account_number, customer_id, account_type, balance, status
+         FROM accounts
+         WHERE account_id = ?
+         FOR UPDATE`,
+        [accountId]
+      );
 
-    if (!rows || rows.length === 0) {
-      const error = new Error('Account not found');
-      error.statusCode = 404;
-      error.code = 'ACC_002';
-      error.safeMessage = 'Account not found';
-      throw error;
+      if (!rows || rows.length === 0) {
+        const error = new Error('Account not found');
+        error.statusCode = 404;
+        error.code = 'ACC_002';
+        error.safeMessage = 'Account not found';
+        throw error;
+      }
+
+      const account = rows[0];
+
+      // 2. Account status check under lock (FR-11)
+      if (account.status !== 'ACTIVE') {
+        const error = new Error('Account is frozen or inactive');
+        error.statusCode = 409;
+        error.code = 'ACC_001';
+        error.safeMessage = 'Account is frozen or inactive';
+        error.accountStatus = account.status;
+        throw error;
+      }
+
+      // 3. Update account balance in MySQL
+      await conn.execute(
+        'UPDATE accounts SET balance = balance + ? WHERE account_id = ?',
+        [normalizedAmount, accountId]
+      );
+
+      // Optional test hook for TC-10: Force failure after balance update but before ledger insert
+      if (_testFailurePoint === 'AFTER_BALANCE_UPDATE') {
+        const simError = new Error('Simulated database error after balance update (TC-10)');
+        simError.statusCode = 500;
+        simError.code = 'TXN_003';
+        simError.safeMessage = 'Transaction failed. No money was moved.';
+        throw simError;
+      }
+
+      // 4. Generate unique transaction identifier
+      const transactionRef = await generateUniqueTransactionRef('DEPOSIT', conn);
+
+      // Optional test hook for TC-10: Force failure immediately before ledger insertion
+      if (_testFailurePoint === 'BEFORE_LEDGER_INSERT') {
+        const simError = new Error('Simulated database failure before ledger insert (TC-10)');
+        simError.statusCode = 500;
+        simError.code = 'TXN_003';
+        simError.safeMessage = 'Transaction failed. No money was moved.';
+        throw simError;
+      }
+
+      // 5. Insert unmodifiable transaction ledger entry (NFR-10, FR-18, FR-19)
+      // For DEPOSIT: source_account_id is NULL, destination_account_id is accountId
+      const safeRemarks = remarks ? String(remarks).trim().substring(0, 255) : 'Cash deposit at branch';
+      const [insertResult] = await conn.execute(
+        `INSERT INTO bank_transactions
+          (transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks)
+         VALUES (?, 'DEPOSIT', ?, NULL, ?, ?, ?)`,
+        [transactionRef, normalizedAmount, accountId, performedByUserId, safeRemarks]
+      );
+
+      // Phase 3: Record fraud evaluation event in the same atomic MySQL transaction
+      await recordOutboxEvent(conn, {
+        transactionId: insertResult.insertId,
+        eventType: 'DEPOSIT',
+        payload: {
+          transactionId: insertResult.insertId,
+          transactionRef,
+          transactionType: 'DEPOSIT',
+          amount: normalizedAmount,
+          customerId: account.customer_id,
+          accountId: account.account_id,
+          destinationAccountId: null,
+          performedByUserId,
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      // Optional test hook: Force failure after ledger insert
+      if (_testFailurePoint === 'AFTER_LEDGER_INSERT') {
+        const simError = new Error('Simulated failure after ledger insert (TC-10)');
+        simError.statusCode = 500;
+        simError.code = 'TXN_003';
+        simError.safeMessage = 'Transaction failed. No money was moved.';
+        throw simError;
+      }
+
+      // 6. Retrieve committed balance from database
+      const [balanceRows] = await conn.execute(
+        'SELECT balance FROM accounts WHERE account_id = ?',
+        [accountId]
+      );
+      const balanceAfter = balanceRows && balanceRows.length > 0 ? Number(balanceRows[0].balance) : Number(account.balance) + Number(normalizedAmount);
+
+      return {
+        transactionId: insertResult.insertId,
+        transactionRef,
+        transactionReference: transactionRef,
+        type: 'DEPOSIT',
+        accountId: account.account_id,
+        accountNumber: account.account_number,
+        amount: Number(normalizedAmount),
+        previousBalance: Number(account.balance),
+        balanceAfter,
+        timestamp: new Date().toISOString()
+      };
+    });
+
+    await recordAuditEvent({
+      actorUserId: performedByUserId,
+      actionType: 'DEPOSIT_COMPLETED',
+      targetEntityType: 'ACCOUNT',
+      targetEntityId: result.accountId,
+      description: `Deposit of ${result.amount} completed into account ${result.accountNumber}. Reference: ${result.transactionRef}.`,
+      result: 'SUCCESS',
+      metadata: {
+        transactionRef: result.transactionRef,
+        amount: result.amount,
+        accountNumber: result.accountNumber,
+        balanceAfter: result.balanceAfter
+      }
+    });
+
+    return result;
+  } catch (error) {
+    if (performedByUserId) {
+      await recordAuditEvent({
+        actorUserId: performedByUserId,
+        actionType: 'DEPOSIT_FAILED',
+        targetEntityType: 'ACCOUNT',
+        targetEntityId: accountId || null,
+        description: `Deposit failed for account ID ${accountId}: ${error.safeMessage || error.message}`,
+        result: 'FAILURE',
+        metadata: {
+          amount,
+          accountId,
+          errorMessage: error.safeMessage || error.message
+        }
+      });
     }
-
-    const account = rows[0];
-
-    // 2. Account status check under lock (FR-11)
-    if (account.status !== 'ACTIVE') {
-      const error = new Error('Account is frozen or inactive');
-      error.statusCode = 409;
-      error.code = 'ACC_001';
-      error.safeMessage = 'Account is frozen or inactive';
-      error.accountStatus = account.status;
-      throw error;
-    }
-
-    // 3. Update account balance in MySQL
-    await conn.execute(
-      'UPDATE accounts SET balance = balance + ? WHERE account_id = ?',
-      [normalizedAmount, accountId]
-    );
-
-    // Optional test hook for TC-10: Force failure after balance update but before ledger insert
-    if (_testFailurePoint === 'AFTER_BALANCE_UPDATE') {
-      const simError = new Error('Simulated database error after balance update (TC-10)');
-      simError.statusCode = 500;
-      simError.code = 'TXN_003';
-      simError.safeMessage = 'Transaction failed. No money was moved.';
-      throw simError;
-    }
-
-    // 4. Generate unique transaction identifier
-    const transactionRef = await generateUniqueTransactionRef('DEPOSIT', conn);
-
-    // Optional test hook for TC-10: Force failure immediately before ledger insertion
-    if (_testFailurePoint === 'BEFORE_LEDGER_INSERT') {
-      const simError = new Error('Simulated database failure before ledger insert (TC-10)');
-      simError.statusCode = 500;
-      simError.code = 'TXN_003';
-      simError.safeMessage = 'Transaction failed. No money was moved.';
-      throw simError;
-    }
-
-    // 5. Insert unmodifiable transaction ledger entry (NFR-10, FR-18, FR-19)
-    // For DEPOSIT: source_account_id is NULL, destination_account_id is accountId
-    const safeRemarks = remarks ? String(remarks).trim().substring(0, 255) : 'Cash deposit at branch';
-    const [insertResult] = await conn.execute(
-      `INSERT INTO bank_transactions
-        (transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks)
-       VALUES (?, 'DEPOSIT', ?, NULL, ?, ?, ?)`,
-      [transactionRef, normalizedAmount, accountId, performedByUserId, safeRemarks]
-    );
-
-    // Optional test hook: Force failure after ledger insert
-    if (_testFailurePoint === 'AFTER_LEDGER_INSERT') {
-      const simError = new Error('Simulated failure after ledger insert (TC-10)');
-      simError.statusCode = 500;
-      simError.code = 'TXN_003';
-      simError.safeMessage = 'Transaction failed. No money was moved.';
-      throw simError;
-    }
-
-    // 6. Retrieve committed balance from database
-    const [balanceRows] = await conn.execute(
-      'SELECT balance FROM accounts WHERE account_id = ?',
-      [accountId]
-    );
-    const balanceAfter = balanceRows && balanceRows.length > 0 ? Number(balanceRows[0].balance) : Number(account.balance) + Number(normalizedAmount);
-
-    return {
-      transactionId: insertResult.insertId,
-      transactionRef,
-      transactionReference: transactionRef,
-      type: 'DEPOSIT',
-      accountId: account.account_id,
-      accountNumber: account.account_number,
-      amount: Number(normalizedAmount),
-      balanceAfter,
-      timestamp: new Date().toISOString()
-    };
-  });
+    throw error;
+  }
 }
 
 /**
@@ -268,126 +324,180 @@ async function executeDeposit({ accountId, amount, remarks = null, performedByUs
  * @returns {Promise<object>} Created transaction and updated account balance
  */
 async function executeWithdrawal({ accountId, amount, remarks = null, performedByUserId, _testFailurePoint = null }) {
-  // Pre-validate amount before opening database transaction
-  const normalizedAmount = validateMonetaryAmount(amount);
+  try {
+    // Pre-validate amount before opening database transaction
+    const normalizedAmount = validateMonetaryAmount(amount);
 
-  return await withTransaction(async (conn) => {
-    // 1. Lock account row with SELECT ... FOR UPDATE
-    const [rows] = await conn.execute(
-      `SELECT account_id, account_number, customer_id, account_type, balance, status
-       FROM accounts
-       WHERE account_id = ?
-       FOR UPDATE`,
-      [accountId]
-    );
+    const result = await withTransaction(async (conn) => {
+      // 1. Lock account row with SELECT ... FOR UPDATE
+      const [rows] = await conn.execute(
+        `SELECT account_id, account_number, customer_id, account_type, balance, status
+         FROM accounts
+         WHERE account_id = ?
+         FOR UPDATE`,
+        [accountId]
+      );
 
-    if (!rows || rows.length === 0) {
-      const error = new Error('Account not found');
-      error.statusCode = 404;
-      error.code = 'ACC_002';
-      error.safeMessage = 'Account not found';
-      throw error;
+      if (!rows || rows.length === 0) {
+        const error = new Error('Account not found');
+        error.statusCode = 404;
+        error.code = 'ACC_002';
+        error.safeMessage = 'Account not found';
+        throw error;
+      }
+
+      const account = rows[0];
+
+      // 2. Account status check under lock (FR-11)
+      if (account.status !== 'ACTIVE') {
+        const error = new Error('Account is frozen or inactive');
+        error.statusCode = 409;
+        error.code = 'ACC_001';
+        error.safeMessage = 'Account is frozen or inactive';
+        error.accountStatus = account.status;
+        throw error;
+      }
+
+      // 3. Insufficient balance check (FR-14, TC-06, AC-4)
+      const currentBalanceNum = Number(account.balance);
+      const withdrawalAmountNum = Number(normalizedAmount);
+
+      if (currentBalanceNum < withdrawalAmountNum) {
+        const error = new Error('Insufficient balance');
+        error.statusCode = 422;
+        error.code = 'TXN_001';
+        error.safeMessage = 'Insufficient balance';
+        error.currentBalance = currentBalanceNum;
+        error.requestedAmount = withdrawalAmountNum;
+        throw error;
+      }
+
+      // 4. Update account balance with conditional overdraft guard
+      const [updateResult] = await conn.execute(
+        'UPDATE accounts SET balance = balance - ? WHERE account_id = ? AND balance >= ?',
+        [normalizedAmount, accountId, normalizedAmount]
+      );
+
+      if (updateResult.affectedRows !== 1) {
+        const error = new Error('Insufficient balance');
+        error.statusCode = 422;
+        error.code = 'TXN_001';
+        error.safeMessage = 'Insufficient balance';
+        throw error;
+      }
+
+      // Optional test hook for TC-10: Force failure after balance update
+      if (_testFailurePoint === 'AFTER_BALANCE_UPDATE') {
+        const simError = new Error('Simulated database error after balance update (TC-10)');
+        simError.statusCode = 500;
+        simError.code = 'TXN_003';
+        simError.safeMessage = 'Transaction failed. No money was moved.';
+        throw simError;
+      }
+
+      // 5. Generate unique transaction identifier
+      const transactionRef = await generateUniqueTransactionRef('WITHDRAWAL', conn);
+
+      // Optional test hook for TC-10: Force failure immediately before ledger insert
+      if (_testFailurePoint === 'BEFORE_LEDGER_INSERT') {
+        const simError = new Error('Simulated database failure before ledger insert (TC-10)');
+        simError.statusCode = 500;
+        simError.code = 'TXN_003';
+        simError.safeMessage = 'Transaction failed. No money was moved.';
+        throw simError;
+      }
+
+      // 6. Insert unmodifiable transaction ledger entry (NFR-10, FR-18, FR-19)
+      // For WITHDRAWAL: source_account_id is accountId, destination_account_id is NULL
+      const safeRemarks = remarks ? String(remarks).trim().substring(0, 255) : 'Cash withdrawal at branch';
+      const [insertResult] = await conn.execute(
+        `INSERT INTO bank_transactions
+          (transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks)
+         VALUES (?, 'WITHDRAWAL', ?, ?, NULL, ?, ?)`,
+        [transactionRef, normalizedAmount, accountId, performedByUserId, safeRemarks]
+      );
+
+      // Phase 3: Record fraud evaluation event in the same atomic MySQL transaction
+      await recordOutboxEvent(conn, {
+        transactionId: insertResult.insertId,
+        eventType: 'WITHDRAWAL',
+        payload: {
+          transactionId: insertResult.insertId,
+          transactionRef,
+          transactionType: 'WITHDRAWAL',
+          amount: normalizedAmount,
+          customerId: account.customer_id,
+          accountId: account.account_id,
+          destinationAccountId: null,
+          performedByUserId,
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      // Optional test hook: Force failure after ledger insert
+      if (_testFailurePoint === 'AFTER_LEDGER_INSERT') {
+        const simError = new Error('Simulated failure after ledger insert (TC-10)');
+        simError.statusCode = 500;
+        simError.code = 'TXN_003';
+        simError.safeMessage = 'Transaction failed. No money was moved.';
+        throw simError;
+      }
+
+      // 7. Retrieve committed balance from database
+      const [balanceRows] = await conn.execute(
+        'SELECT balance FROM accounts WHERE account_id = ?',
+        [accountId]
+      );
+      const balanceAfter = balanceRows && balanceRows.length > 0 ? Number(balanceRows[0].balance) : currentBalanceNum - withdrawalAmountNum;
+
+      return {
+        transactionId: insertResult.insertId,
+        transactionRef,
+        transactionReference: transactionRef,
+        type: 'WITHDRAWAL',
+        accountId: account.account_id,
+        accountNumber: account.account_number,
+        amount: Number(normalizedAmount),
+        previousBalance: Number(account.balance),
+        balanceAfter,
+        timestamp: new Date().toISOString()
+      };
+    });
+
+    await recordAuditEvent({
+      actorUserId: performedByUserId,
+      actionType: 'WITHDRAWAL_COMPLETED',
+      targetEntityType: 'ACCOUNT',
+      targetEntityId: result.accountId,
+      description: `Withdrawal of ${result.amount} completed from account ${result.accountNumber}. Reference: ${result.transactionRef}.`,
+      result: 'SUCCESS',
+      metadata: {
+        transactionRef: result.transactionRef,
+        amount: result.amount,
+        accountNumber: result.accountNumber,
+        balanceAfter: result.balanceAfter
+      }
+    });
+
+    return result;
+  } catch (error) {
+    if (performedByUserId) {
+      await recordAuditEvent({
+        actorUserId: performedByUserId,
+        actionType: 'WITHDRAWAL_FAILED',
+        targetEntityType: 'ACCOUNT',
+        targetEntityId: accountId || null,
+        description: `Withdrawal failed from account ID ${accountId}: ${error.safeMessage || error.message}`,
+        result: 'FAILURE',
+        metadata: {
+          amount,
+          accountId,
+          errorMessage: error.safeMessage || error.message
+        }
+      });
     }
-
-    const account = rows[0];
-
-    // 2. Account status check under lock (FR-11)
-    if (account.status !== 'ACTIVE') {
-      const error = new Error('Account is frozen or inactive');
-      error.statusCode = 409;
-      error.code = 'ACC_001';
-      error.safeMessage = 'Account is frozen or inactive';
-      error.accountStatus = account.status;
-      throw error;
-    }
-
-    // 3. Insufficient balance check (FR-14, TC-06, AC-4)
-    const currentBalanceNum = Number(account.balance);
-    const withdrawalAmountNum = Number(normalizedAmount);
-
-    if (currentBalanceNum < withdrawalAmountNum) {
-      const error = new Error('Insufficient balance');
-      error.statusCode = 422;
-      error.code = 'TXN_001';
-      error.safeMessage = 'Insufficient balance';
-      error.currentBalance = currentBalanceNum;
-      error.requestedAmount = withdrawalAmountNum;
-      throw error;
-    }
-
-    // 4. Update account balance with conditional overdraft guard
-    const [updateResult] = await conn.execute(
-      'UPDATE accounts SET balance = balance - ? WHERE account_id = ? AND balance >= ?',
-      [normalizedAmount, accountId, normalizedAmount]
-    );
-
-    if (updateResult.affectedRows !== 1) {
-      const error = new Error('Insufficient balance');
-      error.statusCode = 422;
-      error.code = 'TXN_001';
-      error.safeMessage = 'Insufficient balance';
-      throw error;
-    }
-
-    // Optional test hook for TC-10: Force failure after balance update
-    if (_testFailurePoint === 'AFTER_BALANCE_UPDATE') {
-      const simError = new Error('Simulated database error after balance update (TC-10)');
-      simError.statusCode = 500;
-      simError.code = 'TXN_003';
-      simError.safeMessage = 'Transaction failed. No money was moved.';
-      throw simError;
-    }
-
-    // 5. Generate unique transaction identifier
-    const transactionRef = await generateUniqueTransactionRef('WITHDRAWAL', conn);
-
-    // Optional test hook for TC-10: Force failure immediately before ledger insert
-    if (_testFailurePoint === 'BEFORE_LEDGER_INSERT') {
-      const simError = new Error('Simulated database failure before ledger insert (TC-10)');
-      simError.statusCode = 500;
-      simError.code = 'TXN_003';
-      simError.safeMessage = 'Transaction failed. No money was moved.';
-      throw simError;
-    }
-
-    // 6. Insert unmodifiable transaction ledger entry (NFR-10, FR-18, FR-19)
-    // For WITHDRAWAL: source_account_id is accountId, destination_account_id is NULL
-    const safeRemarks = remarks ? String(remarks).trim().substring(0, 255) : 'Cash withdrawal at branch';
-    const [insertResult] = await conn.execute(
-      `INSERT INTO bank_transactions
-        (transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks)
-       VALUES (?, 'WITHDRAWAL', ?, ?, NULL, ?, ?)`,
-      [transactionRef, normalizedAmount, accountId, performedByUserId, safeRemarks]
-    );
-
-    // Optional test hook: Force failure after ledger insert
-    if (_testFailurePoint === 'AFTER_LEDGER_INSERT') {
-      const simError = new Error('Simulated failure after ledger insert (TC-10)');
-      simError.statusCode = 500;
-      simError.code = 'TXN_003';
-      simError.safeMessage = 'Transaction failed. No money was moved.';
-      throw simError;
-    }
-
-    // 7. Retrieve committed balance from database
-    const [balanceRows] = await conn.execute(
-      'SELECT balance FROM accounts WHERE account_id = ?',
-      [accountId]
-    );
-    const balanceAfter = balanceRows && balanceRows.length > 0 ? Number(balanceRows[0].balance) : currentBalanceNum - withdrawalAmountNum;
-
-    return {
-      transactionId: insertResult.insertId,
-      transactionRef,
-      transactionReference: transactionRef,
-      type: 'WITHDRAWAL',
-      accountId: account.account_id,
-      accountNumber: account.account_number,
-      amount: Number(normalizedAmount),
-      balanceAfter,
-      timestamp: new Date().toISOString()
-    };
-  });
+    throw error;
+  }
 }
 
 /**
@@ -422,12 +532,14 @@ async function getAccountTransactions({ accountId, user, page = 1, size = 20, ty
   const account = accountRows[0];
 
   // 2. Customer data isolation check (NFR-03, TC-16)
-  if (user && user.role === 'CUSTOMER' && Number(user.customerId) !== Number(account.customer_id)) {
-    const error = new Error('You are not authorized to view transactions for this account');
-    error.statusCode = 403;
-    error.code = 'AUTH_002';
-    error.safeMessage = 'You are not authorized to perform this operation';
-    throw error;
+  if (user && user.role === 'CUSTOMER') {
+    if (!user.customerId || Number(user.customerId) !== Number(account.customer_id)) {
+      const error = new Error('You are not authorized to view transactions for this account');
+      error.statusCode = 403;
+      error.code = 'AUTH_002';
+      error.safeMessage = 'You are not authorized to perform this operation';
+      throw error;
+    }
   }
 
   // 3. Pagination sanitization
@@ -527,6 +639,9 @@ async function getAccountTransactions({ accountId, user, page = 1, size = 20, ty
     accountNumber: account.account_number,
     accountType: account.account_type,
     balance: Number(account.balance),
+    currentBalance: Number(account.balance),
+    availableBalance: account.status === 'ACTIVE' ? Number(account.balance) : 0,
+    status: account.status,
     transactions: formattedTransactions,
     items: formattedTransactions,
     pagination: {
@@ -703,6 +818,164 @@ async function listBankTransactions({
 }
 
 
+// ------------------------------------------------------------------------------
+// Transfer Idempotency and In-Flight Deduplication Stores (Feature 3)
+// ------------------------------------------------------------------------------
+const transferIdempotencyStore = new Map();
+const recentTransferFingerprints = new Map();
+
+function pruneTransferStores() {
+  const now = Date.now();
+  const maxAge = 10 * 60 * 1000; // 10 minutes
+  for (const [key, val] of transferIdempotencyStore.entries()) {
+    if (now - val.timestamp > maxAge) {
+      transferIdempotencyStore.delete(key);
+    }
+  }
+  for (const [key, val] of recentTransferFingerprints.entries()) {
+    if (now - val.timestamp > maxAge) {
+      recentTransferFingerprints.delete(key);
+    }
+  }
+}
+
+/**
+ * Mask an account number for beneficiary verification privacy (Feature 3).
+ * Keeps standard prefix and last 4 characters, masking sensitive middle digits.
+ * E.g., 'ACC-SB-25838103' -> 'ACC-SB-****8103'
+ *       'ACC-CA-77245049' -> 'ACC-CA-****5049'
+ *       'ACC-T2'          -> 'AC****T2'
+ * @param {string} accountNumber
+ * @returns {string}
+ */
+function maskAccountNumber(accountNumber) {
+  if (!accountNumber || typeof accountNumber !== 'string') return '';
+  const trimmed = accountNumber.trim();
+  const parts = trimmed.split('-');
+  if (parts.length === 3) {
+    const lastPart = parts[2];
+    const maskedLast = lastPart.length > 4 ? '****' + lastPart.slice(-4) : '****';
+    return `${parts[0]}-${parts[1]}-${maskedLast}`;
+  }
+  if (trimmed.length <= 4) {
+    return '****' + trimmed.slice(-2);
+  }
+  if (trimmed.length <= 8) {
+    return trimmed.slice(0, 2) + '****' + trimmed.slice(-2);
+  }
+  return trimmed.slice(0, 4) + '****' + trimmed.slice(-4);
+}
+
+/**
+ * Verify a destination beneficiary account before initiating fund transfer (Feature 3).
+ *
+ * Requirements:
+ * - Find destination account by ID or account number.
+ * - Verify account exists.
+ * - Verify account is ACTIVE (reject FROZEN or INACTIVE with 409 ACC_001).
+ * - Verify destination is not identical to source account (if source provided).
+ * - Return ONLY minimum info: beneficiaryName, maskedAccountNumber, accountType, verificationStatus.
+ *
+ * @param {object} params
+ * @param {string|number} params.destinationAccount - Destination account ID or number
+ * @param {number} [params.sourceAccountId] - Optional source account ID to ensure source !== destination
+ * @param {number} [params.sessionCustomerId] - Verified customer ID from authenticated session
+ * @returns {Promise<object>} Beneficiary verification payload
+ */
+async function verifyBeneficiary({
+  destinationAccount,
+  sourceAccountId = null,
+  sessionCustomerId = null
+}) {
+  if (destinationAccount === undefined || destinationAccount === null || String(destinationAccount).trim() === '') {
+    const error = new Error('Destination account is required');
+    error.statusCode = 400;
+    error.code = 'VAL_001';
+    error.safeMessage = 'Destination account is required';
+    throw error;
+  }
+
+  const destStr = String(destinationAccount).trim();
+  let matchedAccount = null;
+
+  // 1. If purely numeric digits, check direct account_id lookup first
+  if (/^[1-9]\d*$/.test(destStr)) {
+    const candidateId = Number(destStr);
+    const idCheck = await query(
+      `SELECT a.account_id, a.account_number, a.account_type, a.status, a.customer_id, c.full_name
+       FROM accounts a
+       JOIN customers c ON a.customer_id = c.customer_id
+       WHERE a.account_id = ?
+       LIMIT 1`,
+      [candidateId]
+    );
+    if (idCheck && idCheck.length > 0) {
+      matchedAccount = idCheck[0];
+    }
+  }
+
+  // 2. Lookup by account_number
+  if (!matchedAccount) {
+    const numCheck = await query(
+      `SELECT a.account_id, a.account_number, a.account_type, a.status, a.customer_id, c.full_name
+       FROM accounts a
+       JOIN customers c ON a.customer_id = c.customer_id
+       WHERE a.account_number = ?
+       LIMIT 1`,
+      [destStr]
+    );
+    if (numCheck && numCheck.length > 0) {
+      matchedAccount = numCheck[0];
+    }
+  }
+
+  // 3. Destination account does not exist
+  if (!matchedAccount) {
+    const error = new Error('Destination account not found');
+    error.statusCode = 404;
+    error.code = 'ACC_002';
+    error.safeMessage = 'Destination account not found';
+    throw error;
+  }
+
+  // 4. Same account check (if sourceAccountId provided)
+  if (sourceAccountId !== undefined && sourceAccountId !== null && sourceAccountId !== '') {
+    const srcId = Number(sourceAccountId);
+    if (matchedAccount.account_id === srcId) {
+      const error = new Error('Source and destination accounts must be different');
+      error.statusCode = 400;
+      error.code = 'TXN_002';
+      error.safeMessage = 'Source and destination accounts must be different';
+      throw error;
+    }
+  }
+
+  // 5. Account status validation
+  if (matchedAccount.status !== 'ACTIVE') {
+    const error = new Error('Destination account is frozen or inactive');
+    error.statusCode = 409;
+    error.code = 'ACC_001';
+    error.safeMessage = 'Destination account is frozen or inactive';
+    error.accountStatus = matchedAccount.status;
+    throw error;
+  }
+
+  return {
+    beneficiaryName: matchedAccount.full_name,
+    maskedAccountNumber: maskAccountNumber(matchedAccount.account_number),
+    accountType: matchedAccount.account_type,
+    verificationStatus: 'VERIFIED'
+  };
+}
+
+/**
+ * Clear deduplication stores for testing purposes.
+ */
+function _resetTransferDeduplicationStores() {
+  transferIdempotencyStore.clear();
+  recentTransferFingerprints.clear();
+}
+
 /**
  * Execute an atomic customer fund transfer between two bank accounts (FR-15, FR-16, FR-17, Issue #9).
  *
@@ -747,12 +1020,36 @@ async function executeTransfer({
   remarks = null,
   performedByUserId,
   sessionCustomerId,
+  idempotencyKey = null,
   _testFailurePoint = null
 }) {
-  // 1. Validate monetary amount (NFR-04, TXN_002)
+  pruneTransferStores();
+
+  // 1. Check explicit idempotency key if provided
+  const trimmedIdempKey = idempotencyKey ? String(idempotencyKey).trim() : null;
+  if (trimmedIdempKey) {
+    const existingEntry = transferIdempotencyStore.get(trimmedIdempKey);
+    if (existingEntry) {
+      if (existingEntry.status === 'PENDING') {
+        const error = new Error('A transfer request with this idempotency key is currently processing');
+        error.statusCode = 409;
+        error.code = 'TXN_004';
+        error.safeMessage = 'A transfer request with this idempotency key is currently processing';
+        throw error;
+      }
+      if (existingEntry.status === 'COMPLETED') {
+        return {
+          ...existingEntry.result,
+          isIdempotentReplay: true
+        };
+      }
+    }
+  }
+
+  // 2. Validate monetary amount (NFR-04, TXN_002)
   const normalizedAmount = validateMonetaryAmount(amount);
 
-  // 2. Validate source account ID parameter
+  // 3. Validate source account ID parameter
   const srcId = Number(sourceAccountId);
   if (!Number.isSafeInteger(srcId) || srcId <= 0) {
     const error = new Error('Invalid source account ID');
@@ -775,7 +1072,14 @@ async function executeTransfer({
     throw error;
   }
 
-  return await withTransaction(async (conn) => {
+  const now = Date.now();
+  // Register in-flight idempotency lock if idempotencyKey is supplied
+  if (trimmedIdempKey) {
+    transferIdempotencyStore.set(trimmedIdempKey, { status: 'PENDING', timestamp: now });
+  }
+
+  try {
+    const result = await withTransaction(async (conn) => {
     // 3. Resolve destination account ID if passed as account number or string
     let resolvedDestId = null;
     const destStr = String(rawDest).trim();
@@ -864,7 +1168,7 @@ async function executeTransfer({
 
     // 6. Customer ownership authorization check (AC-1, NFR-03)
     if (sessionCustomerId !== undefined && sessionCustomerId !== null) {
-      if (Number(sourceAccount.customer_id) !== Number(sessionCustomerId)) {
+      if (!sessionCustomerId || Number(sourceAccount.customer_id) !== Number(sessionCustomerId)) {
         const error = new Error('You are not authorized to transfer from this account');
         error.statusCode = 403;
         error.code = 'AUTH_002';
@@ -974,6 +1278,23 @@ async function executeTransfer({
       [transactionRef, normalizedAmount, srcId, resolvedDestId, performedByUserId, safeRemarks]
     );
 
+    // Phase 3: Record fraud evaluation event in the same atomic MySQL transaction
+    await recordOutboxEvent(conn, {
+      transactionId: insertResult.insertId,
+      eventType: 'TRANSFER',
+      payload: {
+        transactionId: insertResult.insertId,
+        transactionRef,
+        transactionType: 'TRANSFER',
+        amount: normalizedAmount,
+        customerId: sourceAccount.customer_id,
+        accountId: sourceAccount.account_id,
+        destinationAccountId: resolvedDestId,
+        performedByUserId,
+        timestamp: new Date().toISOString()
+      }
+    });
+
     // Optional test hook for TC-10: Force failure after ledger insert
     if (_testFailurePoint === 'AFTER_LEDGER_INSERT') {
       const simError = new Error('Simulated failure after ledger insert (TC-10)');
@@ -1006,6 +1327,321 @@ async function executeTransfer({
       timestamp: new Date().toISOString()
     };
   });
+
+  await recordAuditEvent({
+    actorUserId: performedByUserId,
+    actionType: 'TRANSFER_COMPLETED',
+    targetEntityType: 'ACCOUNT',
+    targetEntityId: result.sourceAccountId,
+    description: `Fund transfer of ${result.amount} completed from account ${result.sourceAccountNumber} to account ${result.destinationAccountNumber}. Reference: ${result.transactionRef}.`,
+    result: 'SUCCESS',
+    metadata: {
+      transactionRef: result.transactionRef,
+      amount: result.amount,
+      sourceAccountNumber: result.sourceAccountNumber,
+      destinationAccountNumber: result.destinationAccountNumber,
+      sourceBalanceAfter: result.sourceBalanceAfter
+    }
+  });
+
+  // Save successful result to deduplication store if idempotencyKey supplied
+  if (trimmedIdempKey) {
+    transferIdempotencyStore.set(trimmedIdempKey, { status: 'COMPLETED', result, timestamp: Date.now() });
+  }
+
+  return result;
+} catch (error) {
+  // Release in-flight lock on error
+  if (trimmedIdempKey) {
+    transferIdempotencyStore.delete(trimmedIdempKey);
+  }
+  if (performedByUserId) {
+    await recordAuditEvent({
+      actorUserId: performedByUserId,
+      actionType: 'TRANSFER_FAILED',
+      targetEntityType: 'ACCOUNT',
+      targetEntityId: sourceAccountId || null,
+      description: `Fund transfer failed from account ID ${sourceAccountId}: ${error.safeMessage || error.message}`,
+      result: 'FAILURE',
+      metadata: {
+        amount,
+        sourceAccountId,
+        destinationAccountId,
+        destinationAccountNumber,
+        errorMessage: error.safeMessage || error.message
+      }
+    });
+  }
+  throw error;
+}
+}
+
+/**
+ * Helper to format Indian Rupee currency safely
+ */
+function formatCurrencyINR(val) {
+  const num = Number(val);
+  if (isNaN(num)) return '₹0.00';
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(num);
+}
+
+/**
+ * Retrieve authoritative transaction receipt proof for cash deposits, cash withdrawals, and transfers (Feature 2).
+ * Verifies existence, enforces role-based customer data isolation (AUTH_002),
+ * and reconstructs exact historical balance figures.
+ *
+ * @param {object} params
+ * @param {string|number} params.transactionIdentifier - Transaction ID or Transaction Reference (TXN-...)
+ * @param {object} params.user - Authenticated requester { userId, role, customerId, employeeId }
+ * @returns {Promise<object>} Structured receipt proof
+ */
+async function getTransactionReceipt({ transactionIdentifier, user }) {
+  if (!transactionIdentifier) {
+    const error = new Error('Transaction identifier is required');
+    error.statusCode = 400;
+    error.code = 'VAL_001';
+    throw error;
+  }
+
+  // 1. Authoritative lookup from MySQL (support numeric transaction_id or string transaction_ref)
+  const isNumeric = /^\d+$/.test(String(transactionIdentifier).trim());
+  const lookupSql = `
+    SELECT 
+      t.transaction_id,
+      t.transaction_ref,
+      t.type,
+      t.amount,
+      t.source_account_id,
+      t.destination_account_id,
+      t.performed_by_user_id,
+      t.remarks,
+      t.created_at,
+      sa.account_number AS source_account_number,
+      sa.account_type AS source_account_type,
+      sa.customer_id AS source_customer_id,
+      sa.balance AS source_current_balance,
+      sa.status AS source_status,
+      sc.full_name AS source_customer_name,
+      sc.email AS source_customer_email,
+      da.account_number AS destination_account_number,
+      da.account_type AS destination_account_type,
+      da.customer_id AS destination_customer_id,
+      da.balance AS destination_current_balance,
+      da.status AS destination_status,
+      dc.full_name AS destination_customer_name,
+      dc.email AS destination_customer_email,
+      u.username AS performer_username,
+      u.role AS performer_role,
+      e.full_name AS employee_name,
+      e.employee_id AS employee_staff_id
+    FROM bank_transactions t
+    LEFT JOIN accounts sa ON t.source_account_id = sa.account_id
+    LEFT JOIN customers sc ON sa.customer_id = sc.customer_id
+    LEFT JOIN accounts da ON t.destination_account_id = da.account_id
+    LEFT JOIN customers dc ON da.customer_id = dc.customer_id
+    LEFT JOIN users u ON t.performed_by_user_id = u.user_id
+    LEFT JOIN employees e ON u.user_id = e.user_id
+    WHERE ${isNumeric ? 't.transaction_id = ? OR t.transaction_ref = ?' : 't.transaction_ref = ?'}
+    LIMIT 1
+  `;
+
+  const lookupParams = isNumeric
+    ? [Number(transactionIdentifier), String(transactionIdentifier).trim()]
+    : [String(transactionIdentifier).trim()];
+
+  const rows = await query(lookupSql, lookupParams);
+
+  if (!rows || rows.length === 0) {
+    const error = new Error('Transaction not found');
+    error.statusCode = 404;
+    error.code = 'TXN_004';
+    error.safeMessage = 'Transaction not found';
+    throw error;
+  }
+
+  const txn = rows[0];
+
+  // 2. Identify primary associated account
+  // For DEPOSIT: destination_account
+  // For WITHDRAWAL: source_account
+  // For TRANSFER: prefer source_account (or destination if customer owns destination)
+  let primaryAcc = null;
+  const isDeposit = txn.type === 'DEPOSIT';
+  const isWithdrawal = txn.type === 'WITHDRAWAL';
+  const isTransfer = txn.type === 'TRANSFER';
+
+  if (isDeposit) {
+    primaryAcc = {
+      accountId: txn.destination_account_id,
+      accountNumber: txn.destination_account_number,
+      accountType: txn.destination_account_type,
+      customerId: txn.destination_customer_id,
+      customerName: txn.destination_customer_name,
+      customerEmail: txn.destination_customer_email,
+      currentBalance: Number(txn.destination_current_balance),
+      status: txn.destination_status
+    };
+  } else if (isWithdrawal) {
+    primaryAcc = {
+      accountId: txn.source_account_id,
+      accountNumber: txn.source_account_number,
+      accountType: txn.source_account_type,
+      customerId: txn.source_customer_id,
+      customerName: txn.source_customer_name,
+      customerEmail: txn.source_customer_email,
+      currentBalance: Number(txn.source_current_balance),
+      status: txn.source_status
+    };
+  } else {
+    // For transfer, check customer role if requester is customer
+    if (user && user.role === 'CUSTOMER' && user.customerId === txn.destination_customer_id) {
+      primaryAcc = {
+        accountId: txn.destination_account_id,
+        accountNumber: txn.destination_account_number,
+        accountType: txn.destination_account_type,
+        customerId: txn.destination_customer_id,
+        customerName: txn.destination_customer_name,
+        customerEmail: txn.destination_customer_email,
+        currentBalance: Number(txn.destination_current_balance),
+        status: txn.destination_status
+      };
+    } else {
+      primaryAcc = {
+        accountId: txn.source_account_id,
+        accountNumber: txn.source_account_number,
+        accountType: txn.source_account_type,
+        customerId: txn.source_customer_id,
+        customerName: txn.source_customer_name,
+        customerEmail: txn.source_customer_email,
+        currentBalance: Number(txn.source_current_balance),
+        status: txn.source_status
+      };
+    }
+  }
+
+  // 3. Authorization check (Criteria 6, 7, 8)
+  // Admins and Employees have access to counter receipts
+  // Customers may only access receipts for their own account
+  if (user && user.role === 'CUSTOMER') {
+    const custId = user.customerId ? Number(user.customerId) : null;
+    const isOwner = Boolean(
+      custId && (
+        Number(txn.source_customer_id) === custId ||
+        Number(txn.destination_customer_id) === custId
+      )
+    );
+    if (!isOwner) {
+      const error = new Error('Access forbidden: You can only view receipts for your own transactions');
+      error.statusCode = 403;
+      error.code = 'AUTH_002';
+      error.safeMessage = 'You are not authorized to perform this operation';
+      throw error;
+    }
+  }
+
+  // 4. Deterministic balance calculation from subsequent ledger records
+  const subsequentSql = `
+    SELECT type, amount, source_account_id, destination_account_id
+    FROM bank_transactions
+    WHERE (source_account_id = ? OR destination_account_id = ?)
+      AND (created_at > ? OR (created_at = ? AND transaction_id > ?))
+    ORDER BY created_at ASC, transaction_id ASC
+  `;
+  const subsequentTxns = await query(subsequentSql, [
+    primaryAcc.accountId,
+    primaryAcc.accountId,
+    txn.created_at,
+    txn.created_at,
+    txn.transaction_id
+  ]);
+
+  let subsequentDelta = 0;
+  if (subsequentTxns && subsequentTxns.length > 0) {
+    for (const sub of subsequentTxns) {
+      const subAmt = Number(sub.amount);
+      if (sub.destination_account_id === primaryAcc.accountId) {
+        subsequentDelta += subAmt;
+      }
+      if (sub.source_account_id === primaryAcc.accountId) {
+        subsequentDelta -= subAmt;
+      }
+    }
+  }
+
+  const txnAmountNum = Number(txn.amount);
+  const balanceAfter = primaryAcc.currentBalance - subsequentDelta;
+  let previousBalance;
+
+  if (isDeposit || (isTransfer && primaryAcc.accountId === txn.destination_account_id)) {
+    previousBalance = balanceAfter - txnAmountNum;
+  } else {
+    previousBalance = balanceAfter + txnAmountNum;
+  }
+
+  // Performer information
+  let performerName = txn.employee_name || 'Bank Staff';
+  if (!txn.employee_name && txn.performer_role === 'ADMIN') {
+    performerName = 'System Administrator';
+  } else if (!txn.employee_name && txn.performer_username) {
+    performerName = txn.performer_username;
+  }
+  const performerStaffId = txn.employee_staff_id ? `Staff ID #${txn.employee_staff_id}` : (txn.performer_username ? `@${txn.performer_username}` : 'Branch Counter');
+
+  const displayType = isDeposit ? 'CASH DEPOSIT' : (isWithdrawal ? 'CASH WITHDRAWAL' : 'FUND TRANSFER');
+
+  return {
+    bank: {
+      institutionName: 'CORE BANK',
+      branchName: 'Main Branch',
+      branchCode: 'CB-MUM-001',
+      address: 'Corporate Headquarters, Financial District',
+      city: 'Mumbai, Maharashtra',
+      contact: '+91 22 5550 1900 | support@corebank.com',
+      receiptTitle: 'Official Counter Transaction Proof'
+    },
+    transaction: {
+      transactionId: txn.transaction_id,
+      transactionRef: txn.transaction_ref,
+      type: txn.type,
+      transactionType: displayType,
+      status: 'SUCCESS',
+      amount: txnAmountNum,
+      amountFormatted: formatCurrencyINR(txnAmountNum),
+      remarks: txn.remarks || null,
+      createdAt: txn.created_at,
+      timestamp: txn.created_at
+    },
+    account: {
+      accountId: primaryAcc.accountId,
+      accountNumber: primaryAcc.accountNumber,
+      accountType: primaryAcc.accountType,
+      status: primaryAcc.status,
+      customerName: primaryAcc.customerName,
+      customerEmail: primaryAcc.customerEmail || null,
+      sourceAccountNumber: txn.source_account_number || null,
+      destinationAccountNumber: txn.destination_account_number || null
+    },
+    balance: {
+      previousBalance: Number(previousBalance.toFixed(2)),
+      previousBalanceFormatted: formatCurrencyINR(previousBalance),
+      transactionAmount: txnAmountNum,
+      transactionAmountFormatted: formatCurrencyINR(txnAmountNum),
+      updatedBalance: Number(balanceAfter.toFixed(2)),
+      updatedBalanceFormatted: formatCurrencyINR(balanceAfter),
+      currency: 'INR'
+    },
+    employee: {
+      name: performerName,
+      employeeId: performerStaffId,
+      username: txn.performer_username || 'teller',
+      role: txn.performer_role || 'EMPLOYEE'
+    }
+  };
 }
 
 module.exports = {
@@ -1016,5 +1652,9 @@ module.exports = {
   getAccountTransactions,
   listBankTransactions,
   executeTransfer,
-  TRANSACTION_TYPE_PREFIXES
+  getTransactionReceipt,
+  TRANSACTION_TYPE_PREFIXES,
+  maskAccountNumber,
+  verifyBeneficiary,
+  _resetTransferDeduplicationStores
 };

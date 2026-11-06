@@ -19,7 +19,9 @@ const {
   executeDeposit,
   executeWithdrawal,
   executeTransfer,
-  listBankTransactions
+  listBankTransactions,
+  getTransactionReceipt,
+  verifyBeneficiary
 } = require('../services/transactionService');
 const { query } = require('../config/db');
 
@@ -126,6 +128,58 @@ router.post('/withdraw', requireAuth, requireRole('EMPLOYEE'), async (req, res, 
  */
 
 /**
+ * POST /api/transactions/transfer/verify-beneficiary
+ * POST /api/transactions/verify-beneficiary
+ * Verify destination beneficiary account details prior to transfer (Feature 3).
+ * Access: Authenticated CUSTOMER only.
+ */
+router.post(['/transfer/verify-beneficiary', '/verify-beneficiary'], requireAuth, requireRole('CUSTOMER'), async (req, res, next) => {
+  try {
+    const { destinationAccount, destinationAccountNumber, destinationAccountId, sourceAccountId } = req.body || {};
+    const dest = destinationAccountId !== undefined && destinationAccountId !== null && destinationAccountId !== ''
+      ? destinationAccountId
+      : (destinationAccountNumber || destinationAccount);
+
+    const result = await verifyBeneficiary({
+      destinationAccount: dest,
+      sourceAccountId,
+      sessionCustomerId: req.user.customerId
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Beneficiary account verified successfully.',
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get(['/transfer/verify-beneficiary', '/verify-beneficiary'], requireAuth, requireRole('CUSTOMER'), async (req, res, next) => {
+  try {
+    const { destinationAccount, destinationAccountNumber, destinationAccountId, sourceAccountId } = req.query || {};
+    const dest = destinationAccountId !== undefined && destinationAccountId !== null && destinationAccountId !== ''
+      ? destinationAccountId
+      : (destinationAccountNumber || destinationAccount);
+
+    const result = await verifyBeneficiary({
+      destinationAccount: dest,
+      sourceAccountId,
+      sessionCustomerId: req.user.customerId
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Beneficiary account verified successfully.',
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * POST /api/transactions/transfer
  * Customer fund transfer between accounts (FR-15, FR-16, FR-17).
  * Access: Authenticated CUSTOMER only.
@@ -152,6 +206,34 @@ router.post('/transfer', requireAuth, requireRole('CUSTOMER'), async (req, res, 
           code: 'VAL_001',
           message: 'Invalid source account ID. Must be a positive integer.'
         }
+      });
+    }
+
+    if (!req.user.customerId) {
+      return res.status(403).json({
+        success: false,
+        errorCode: 'AUTH_002',
+        message: 'Customer profile required for transfer operations',
+        error: { code: 'AUTH_002', message: 'Customer profile required for transfer operations' }
+      });
+    }
+
+    // Verify source account belongs strictly to authenticated customer
+    const srcRows = await query('SELECT customer_id FROM accounts WHERE account_id = ? LIMIT 1', [parsedSourceAccountId]);
+    if (!srcRows || srcRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        errorCode: 'ACC_002',
+        message: 'Source account not found',
+        error: { code: 'ACC_002', message: 'Source account not found' }
+      });
+    }
+    if (Number(srcRows[0].customer_id) !== Number(req.user.customerId)) {
+      return res.status(403).json({
+        success: false,
+        errorCode: 'AUTH_002',
+        message: 'You are not authorized to transfer from this account',
+        error: { code: 'AUTH_002', message: 'You are not authorized to perform this operation' }
       });
     }
 
@@ -183,6 +265,12 @@ router.post('/transfer', requireAuth, requireRole('CUSTOMER'), async (req, res, 
       });
     }
 
+    const effectiveIdempotencyKey = req.headers['idempotency-key'] ||
+      req.headers['x-idempotency-key'] ||
+      req.body?.idempotencyKey ||
+      req.body?.clientRequestId ||
+      null;
+
     const result = await executeTransfer({
       sourceAccountId: parsedSourceAccountId,
       destinationAccountId: targetDest,
@@ -191,6 +279,7 @@ router.post('/transfer', requireAuth, requireRole('CUSTOMER'), async (req, res, 
       remarks,
       performedByUserId: req.user.userId,
       sessionCustomerId: req.user.customerId,
+      idempotencyKey: effectiveIdempotencyKey,
       _testFailurePoint
     });
 
@@ -257,6 +346,29 @@ router.get('/', requireAuth, requireRole('EMPLOYEE', 'ADMIN'), async (req, res, 
     return res.status(200).json({
       success: true,
       data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+/**
+ * GET /api/transactions/:transactionId/receipt
+ * Retrieve authoritative transaction receipt proof for cash deposits, withdrawals, and transfers (Feature 2).
+ * Access: Authenticated EMPLOYEE, ADMIN, or owning CUSTOMER.
+ */
+router.get('/:transactionId/receipt', requireAuth, async (req, res, next) => {
+  try {
+    const { transactionId } = req.params;
+    const receipt = await getTransactionReceipt({
+      transactionIdentifier: transactionId,
+      user: req.user
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: receipt
     });
   } catch (error) {
     next(error);

@@ -18,12 +18,17 @@ const router = express.Router();
 const { query, withTransaction } = require('../config/db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { generateUniqueAccountNumber } = require('../services/accountService');
+const { recordAuditEvent } = require('../services/auditService');
 const {
   executeDeposit,
   executeWithdrawal,
   getAccountTransactions,
   executeTransfer
 } = require('../services/transactionService');
+const {
+  generateAccountStatement,
+  statementToCsv
+} = require('../services/statementService');
 
 // Permitted account types
 const VALID_ACCOUNT_TYPES = ['SAVINGS', 'CURRENT'];
@@ -73,6 +78,35 @@ function parseStrictCustomerId(val) {
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
   }
   return null;
+}
+
+/**
+ * Format account database row into safe, uniform API response.
+ * Enforces Feature 2 balance clarity:
+ * - balance: stored DECIMAL balance (backward compatibility)
+ * - currentBalance: actual stored monetary ledger balance
+ * - availableBalance: funds available for transaction (equals currentBalance for ACTIVE, 0 for FROZEN/INACTIVE)
+ * @param {Object} r
+ * @returns {Object}
+ */
+function formatAccountResponse(r) {
+  const balanceNum = Number(r.balance);
+  const isActive = r.status === 'ACTIVE';
+  return {
+    accountId: r.account_id,
+    accountNumber: r.account_number,
+    customerId: r.customer_id,
+    customerName: r.customer_name,
+    customerEmail: r.customer_email,
+    customerPhone: r.customer_phone,
+    accountType: r.account_type,
+    balance: balanceNum,
+    currentBalance: balanceNum,
+    availableBalance: isActive ? balanceNum : 0,
+    status: r.status,
+    openedAt: r.opened_at,
+    updatedAt: r.updated_at
+  };
 }
 
 /**
@@ -193,21 +227,29 @@ router.post('/', requireAuth, requireRole('EMPLOYEE'), async (req, res, next) =>
       return newRow[0];
     });
 
-    return res.status(201).json({
-      success: true,
-      data: {
+    await recordAuditEvent({
+      actorUserId: req.user.userId,
+      actionType: 'ACCOUNT_CREATED',
+      targetEntityType: 'ACCOUNT',
+      targetEntityId: createdAccount.account_id,
+      description: `Account '${createdAccount.account_number}' (${createdAccount.account_type}) created for customer '${customer.full_name}' by ${req.user.role.toLowerCase()} '${req.user.username}'.`,
+      result: 'SUCCESS',
+      metadata: {
         accountId: createdAccount.account_id,
         accountNumber: createdAccount.account_number,
         customerId: createdAccount.customer_id,
-        customerName: customer.full_name,
-        customerEmail: customer.email,
-        customerPhone: customer.phone,
-        accountType: createdAccount.account_type,
-        balance: Number(createdAccount.balance),
-        status: createdAccount.status,
-        openedAt: createdAccount.opened_at,
-        updatedAt: createdAccount.updated_at
+        accountType: createdAccount.account_type
       }
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: formatAccountResponse({
+        ...createdAccount,
+        customer_name: customer.full_name,
+        customer_email: customer.email,
+        customer_phone: customer.phone
+      })
     });
   } catch (error) {
     next(error);
@@ -247,10 +289,18 @@ router.get('/', requireAuth, async (req, res, next) => {
     if (isCustomer) {
       // Horizontal data protection: customers can only view their own accounts
       if (!req.user.customerId) {
-        return res.status(200).json({ success: true, data: [] });
+        return res.status(403).json({
+          success: false,
+          errorCode: 'AUTH_002',
+          message: 'Customer profile required for account operations',
+          error: {
+            code: 'AUTH_002',
+            message: 'Customer profile required for account operations'
+          }
+        });
       }
 
-      // If customer provides customerId filter that does not match their own, reject
+      // If customer provides customerId filter that does not match their own, reject (anti-spoofing)
       if (req.query.customerId && parseStrictCustomerId(req.query.customerId) !== req.user.customerId) {
         return res.status(403).json({
           success: false,
@@ -280,43 +330,6 @@ router.get('/', requireAuth, async (req, res, next) => {
         conditions.push('a.customer_id = ?');
         params.push(cId);
       }
-
-      // Filter by status
-      if (req.query.status) {
-        const statusUpper = String(req.query.status).trim().toUpperCase();
-        if (!VALID_ACCOUNT_STATUSES.includes(statusUpper)) {
-          return res.status(400).json({
-            success: false,
-            errorCode: 'VAL_001',
-            message: `Invalid status filter. Permitted: ${VALID_ACCOUNT_STATUSES.join(', ')}`,
-            error: { code: 'VAL_001', message: `Invalid status filter. Permitted: ${VALID_ACCOUNT_STATUSES.join(', ')}` }
-          });
-        }
-        conditions.push('a.status = ?');
-        params.push(statusUpper);
-      }
-
-      // Filter by accountType
-      if (req.query.accountType) {
-        const typeUpper = String(req.query.accountType).trim().toUpperCase();
-        if (!VALID_ACCOUNT_TYPES.includes(typeUpper)) {
-          return res.status(400).json({
-            success: false,
-            errorCode: 'VAL_001',
-            message: `Invalid accountType filter. Permitted: ${VALID_ACCOUNT_TYPES.join(', ')}`,
-            error: { code: 'VAL_001', message: `Invalid accountType filter. Permitted: ${VALID_ACCOUNT_TYPES.join(', ')}` }
-          });
-        }
-        conditions.push('a.account_type = ?');
-        params.push(typeUpper);
-      }
-
-      // Search keyword filter
-      if (req.query.search && typeof req.query.search === 'string' && req.query.search.trim()) {
-        const term = `%${req.query.search.trim()}%`;
-        conditions.push('(a.account_number LIKE ? OR c.full_name LIKE ? OR c.email LIKE ? OR c.phone LIKE ?)');
-        params.push(term, term, term, term);
-      }
     } else {
       return res.status(403).json({
         success: false,
@@ -329,6 +342,49 @@ router.get('/', requireAuth, async (req, res, next) => {
       });
     }
 
+    // Filter by status (permitted for customer, staff, and admin)
+    if (req.query.status) {
+      const statusUpper = String(req.query.status).trim().toUpperCase();
+      if (!VALID_ACCOUNT_STATUSES.includes(statusUpper)) {
+        return res.status(400).json({
+          success: false,
+          errorCode: 'VAL_001',
+          message: `Invalid status filter. Permitted: ${VALID_ACCOUNT_STATUSES.join(', ')}`,
+          error: { code: 'VAL_001', message: `Invalid status filter. Permitted: ${VALID_ACCOUNT_STATUSES.join(', ')}` }
+        });
+      }
+      conditions.push('a.status = ?');
+      params.push(statusUpper);
+    }
+
+    // Filter by accountType (permitted for customer, staff, and admin)
+    if (req.query.accountType) {
+      const typeUpper = String(req.query.accountType).trim().toUpperCase();
+      if (!VALID_ACCOUNT_TYPES.includes(typeUpper)) {
+        return res.status(400).json({
+          success: false,
+          errorCode: 'VAL_001',
+          message: `Invalid accountType filter. Permitted: ${VALID_ACCOUNT_TYPES.join(', ')}`,
+          error: { code: 'VAL_001', message: `Invalid accountType filter. Permitted: ${VALID_ACCOUNT_TYPES.join(', ')}` }
+        });
+      }
+      conditions.push('a.account_type = ?');
+      params.push(typeUpper);
+    }
+
+    // Search keyword filter
+    if (req.query.search && typeof req.query.search === 'string' && req.query.search.trim()) {
+      const term = `%${req.query.search.trim()}%`;
+      if (isCustomer) {
+        // Customer search is scoped strictly to account number (prevents cross-customer reconnaissance)
+        conditions.push('a.account_number LIKE ?');
+        params.push(term);
+      } else {
+        conditions.push('(a.account_number LIKE ? OR c.full_name LIKE ? OR c.email LIKE ? OR c.phone LIKE ?)');
+        params.push(term, term, term, term);
+      }
+    }
+
     if (conditions.length > 0) {
       sql += ` WHERE ` + conditions.join(' AND ');
     }
@@ -337,23 +393,97 @@ router.get('/', requireAuth, async (req, res, next) => {
 
     const rows = await query(sql, params);
 
-    const accounts = rows.map((r) => ({
-      accountId: r.account_id,
-      accountNumber: r.account_number,
-      customerId: r.customer_id,
-      customerName: r.customer_name,
-      customerEmail: r.customer_email,
-      customerPhone: r.customer_phone,
-      accountType: r.account_type,
-      balance: Number(r.balance),
-      status: r.status,
-      openedAt: r.opened_at,
-      updatedAt: r.updated_at
-    }));
+    const accounts = rows.map(formatAccountResponse);
 
     return res.status(200).json({
       success: true,
       data: accounts
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/accounts/summary
+ * Aggregate account metrics (Current balance, Available balance, and status breakdown).
+ * Available balance rules (Feature 2):
+ * - ACTIVE account: available balance equals current stored balance.
+ * - FROZEN account: available balance is 0.00 (transfers restricted per FR-11).
+ * - INACTIVE account: available balance is 0.00 (dormant/closed).
+ * Access: Customer (own accounts), Employee, Admin.
+ */
+router.get('/summary', requireAuth, async (req, res, next) => {
+  try {
+    const isCustomer = req.user.role === 'CUSTOMER';
+    let sql = `
+      SELECT 
+        COUNT(*) AS total_accounts,
+        SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS active_accounts,
+        SUM(CASE WHEN status = 'FROZEN' THEN 1 ELSE 0 END) AS frozen_accounts,
+        SUM(CASE WHEN status = 'INACTIVE' THEN 1 ELSE 0 END) AS inactive_accounts,
+        COALESCE(SUM(balance), 0.00) AS total_current_balance,
+        COALESCE(SUM(CASE WHEN status = 'ACTIVE' THEN balance ELSE 0.00 END), 0.00) AS total_available_balance
+      FROM accounts
+    `;
+    const params = [];
+
+    if (isCustomer) {
+      if (!req.user.customerId) {
+        return res.status(403).json({
+          success: false,
+          errorCode: 'AUTH_002',
+          message: 'Customer profile required for account operations',
+          error: {
+            code: 'AUTH_002',
+            message: 'Customer profile required for account operations'
+          }
+        });
+      }
+
+      // If customer provides customerId filter that does not match their own, reject
+      if (req.query.customerId && parseStrictCustomerId(req.query.customerId) !== req.user.customerId) {
+        return res.status(403).json({
+          success: false,
+          errorCode: 'AUTH_002',
+          message: 'You are not authorized to perform this operation',
+          error: {
+            code: 'AUTH_002',
+            message: 'You are not authorized to perform this operation'
+          }
+        });
+      }
+
+      sql += ' WHERE customer_id = ?';
+      params.push(req.user.customerId);
+    } else if (req.query.customerId) {
+      const cId = parseStrictCustomerId(req.query.customerId);
+      if (!cId) {
+        return res.status(400).json({
+          success: false,
+          errorCode: 'VAL_001',
+          message: 'Invalid customer ID filter',
+          error: { code: 'VAL_001', message: 'Invalid customer ID filter' }
+        });
+      }
+      sql += ' WHERE customer_id = ?';
+      params.push(cId);
+    }
+
+    const rows = await query(sql, params);
+    const row = rows[0] || {};
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalAccounts: Number(row.total_accounts || 0),
+        activeAccounts: Number(row.active_accounts || 0),
+        frozenAccounts: Number(row.frozen_accounts || 0),
+        inactiveAccounts: Number(row.inactive_accounts || 0),
+        totalCurrentBalance: Number(Number(row.total_current_balance || 0).toFixed(2)),
+        totalAvailableBalance: Number(Number(row.total_available_balance || 0).toFixed(2)),
+        currency: 'INR'
+      }
     });
   } catch (error) {
     next(error);
@@ -416,7 +546,7 @@ router.get('/:accountId', requireAuth, async (req, res, next) => {
     const account = rows[0];
 
     // Customer horizontal authorization check
-    if (req.user.role === 'CUSTOMER' && account.customer_id !== req.user.customerId) {
+    if (req.user.role === 'CUSTOMER' && (!req.user.customerId || Number(account.customer_id) !== Number(req.user.customerId))) {
       return res.status(403).json({
         success: false,
         errorCode: 'AUTH_002',
@@ -430,19 +560,7 @@ router.get('/:accountId', requireAuth, async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: {
-        accountId: account.account_id,
-        accountNumber: account.account_number,
-        customerId: account.customer_id,
-        customerName: account.customer_name,
-        customerEmail: account.customer_email,
-        customerPhone: account.customer_phone,
-        accountType: account.account_type,
-        balance: Number(account.balance),
-        status: account.status,
-        openedAt: account.opened_at,
-        updatedAt: account.updated_at
-      }
+      data: formatAccountResponse(account)
     });
   } catch (error) {
     next(error);
@@ -559,22 +677,39 @@ router.patch('/:accountId/status', requireAuth, requireRole('EMPLOYEE'), async (
 
     const updated = updatedRows[0];
 
+    let actionType = 'ACCOUNT_UPDATED';
+    if (targetStatus === 'FROZEN') {
+      actionType = 'ACCOUNT_FROZEN';
+    } else if (targetStatus === 'ACTIVE' && existing[0].status === 'FROZEN') {
+      actionType = 'ACCOUNT_UNFROZEN';
+    } else if (targetStatus === 'ACTIVE' && existing[0].status === 'INACTIVE') {
+      actionType = 'ACCOUNT_REACTIVATED';
+    } else if (targetStatus === 'INACTIVE') {
+      actionType = 'ACCOUNT_DEACTIVATED';
+    }
+
+    await recordAuditEvent({
+      actorUserId: req.user.userId,
+      actionType,
+      targetEntityType: 'ACCOUNT',
+      targetEntityId: accountId,
+      description: `Account ${existing[0].account_number} status changed from ${existing[0].status} to ${targetStatus} by ${req.user.role.toLowerCase()} '${req.user.username}'.${reason ? ` Reason: ${reason}` : ''}`,
+      result: 'SUCCESS',
+      metadata: {
+        accountId,
+        accountNumber: existing[0].account_number,
+        previousStatus: existing[0].status,
+        newStatus: targetStatus,
+        reason: reason || null
+      }
+    });
+
     return res.status(200).json({
       success: true,
       message: `Account status successfully updated to ${targetStatus}`,
       data: {
-        accountId: updated.account_id,
-        accountNumber: updated.account_number,
-        customerId: updated.customer_id,
-        customerName: updated.customer_name,
-        customerEmail: updated.customer_email,
-        customerPhone: updated.customer_phone,
-        accountType: updated.account_type,
-        balance: Number(updated.balance),
-        status: updated.status,
-        reason: reason || null,
-        openedAt: updated.opened_at,
-        updatedAt: updated.updated_at
+        ...formatAccountResponse(updated),
+        reason: reason || null
       }
     });
   } catch (error) {
@@ -681,6 +816,27 @@ router.get('/:accountId/transactions', requireAuth, async (req, res, next) => {
       });
     }
 
+    // Horizontal authorization check for Customer
+    if (req.user.role === 'CUSTOMER') {
+      const accRows = await query('SELECT customer_id FROM accounts WHERE account_id = ? LIMIT 1', [accountId]);
+      if (!accRows || accRows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          errorCode: 'ACC_002',
+          message: 'Account not found',
+          error: { code: 'ACC_002', message: 'Account not found' }
+        });
+      }
+      if (!req.user.customerId || Number(accRows[0].customer_id) !== Number(req.user.customerId)) {
+        return res.status(403).json({
+          success: false,
+          errorCode: 'AUTH_002',
+          message: 'You are not authorized to perform this operation',
+          error: { code: 'AUTH_002', message: 'You are not authorized to perform this operation' }
+        });
+      }
+    }
+
     // Validate pagination params if supplied (AC-3, NFR-18)
     if (req.query.page !== undefined) {
       const parsedPage = parseStrictAccountId(req.query.page);
@@ -732,6 +888,134 @@ router.get('/:accountId/transactions', requireAuth, async (req, res, next) => {
   }
 });
 
+/**
+ * GET /api/accounts/:accountId/statement
+ * Generate customer bank account statement with running balances and period summary (Feature 3).
+ * Query parameters:
+ *  - from: start date (YYYY-MM-DD or ISO)
+ *  - to: end date (YYYY-MM-DD or ISO)
+ *  - preset: '7d' | '30d' | '90d' | 'all' | 'custom'
+ *  - format: 'json' (default) | 'csv'
+ * Access: Authenticated Employee, Admin, or owning Customer.
+ */
+router.get('/:accountId/statement', requireAuth, async (req, res, next) => {
+  try {
+    const accountId = parseStrictAccountId(req.params.accountId);
+    if (!accountId) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'VAL_001',
+        message: 'Invalid account ID. Must be a positive integer.',
+        error: {
+          code: 'VAL_001',
+          message: 'Invalid account ID. Must be a positive integer.'
+        }
+      });
+    }
+
+    // Horizontal authorization check for Customer
+    if (req.user.role === 'CUSTOMER') {
+      const accRows = await query('SELECT customer_id FROM accounts WHERE account_id = ? LIMIT 1', [accountId]);
+      if (!accRows || accRows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          errorCode: 'ACC_002',
+          message: 'Account not found',
+          error: { code: 'ACC_002', message: 'Account not found' }
+        });
+      }
+      if (!req.user.customerId || Number(accRows[0].customer_id) !== Number(req.user.customerId)) {
+        return res.status(403).json({
+          success: false,
+          errorCode: 'AUTH_002',
+          message: 'You are not authorized to perform this operation',
+          error: { code: 'AUTH_002', message: 'You are not authorized to perform this operation' }
+        });
+      }
+    }
+
+    const { from, to, preset, format, page, limit } = req.query;
+
+    const statement = await generateAccountStatement({
+      accountId,
+      user: req.user,
+      from,
+      to,
+      preset,
+      page,
+      limit
+    });
+
+    if (format === 'csv' || req.headers.accept?.includes('text/csv')) {
+      const csvData = statementToCsv(statement);
+      const filename = `bank-statement-${statement.account.accountNumber}-${new Date().toISOString().split('T')[0]}.csv`;
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.status(200).send(csvData);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: statement
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/accounts/:accountId/statement/csv
+ * Dedicated direct CSV export endpoint for account statement.
+ */
+router.get('/:accountId/statement/csv', requireAuth, async (req, res, next) => {
+  req.query.format = 'csv';
+  try {
+    const accountId = parseStrictAccountId(req.params.accountId);
+    if (!accountId) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'VAL_001',
+        message: 'Invalid account ID. Must be a positive integer.'
+      });
+    }
+
+    if (req.user.role === 'CUSTOMER') {
+      const accRows = await query('SELECT customer_id FROM accounts WHERE account_id = ? LIMIT 1', [accountId]);
+      if (!accRows || accRows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          errorCode: 'ACC_002',
+          message: 'Account not found'
+        });
+      }
+      if (!req.user.customerId || Number(accRows[0].customer_id) !== Number(req.user.customerId)) {
+        return res.status(403).json({
+          success: false,
+          errorCode: 'AUTH_002',
+          message: 'You are not authorized to perform this operation'
+        });
+      }
+    }
+
+    const { from, to, preset } = req.query;
+    const statement = await generateAccountStatement({
+      accountId,
+      user: req.user,
+      from,
+      to,
+      preset
+    });
+
+    const csvData = statementToCsv(statement);
+    const filename = `bank-statement-${statement.account.accountNumber}-${new Date().toISOString().split('T')[0]}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.status(200).send(csvData);
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 /**
  * POST /api/accounts/:accountId/transfers
@@ -750,6 +1034,34 @@ router.post('/:accountId/transfers', requireAuth, requireRole('CUSTOMER'), async
           code: 'VAL_001',
           message: 'Invalid source account ID. Must be a positive integer.'
         }
+      });
+    }
+
+    if (!req.user.customerId) {
+      return res.status(403).json({
+        success: false,
+        errorCode: 'AUTH_002',
+        message: 'Customer profile required for transfer operations',
+        error: { code: 'AUTH_002', message: 'Customer profile required for transfer operations' }
+      });
+    }
+
+    // Verify source account belongs strictly to authenticated customer
+    const srcRows = await query('SELECT customer_id FROM accounts WHERE account_id = ? LIMIT 1', [sourceAccountId]);
+    if (!srcRows || srcRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        errorCode: 'ACC_002',
+        message: 'Source account not found',
+        error: { code: 'ACC_002', message: 'Source account not found' }
+      });
+    }
+    if (Number(srcRows[0].customer_id) !== Number(req.user.customerId)) {
+      return res.status(403).json({
+        success: false,
+        errorCode: 'AUTH_002',
+        message: 'You are not authorized to transfer from this account',
+        error: { code: 'AUTH_002', message: 'You are not authorized to perform this operation' }
       });
     }
 
@@ -790,6 +1102,12 @@ router.post('/:accountId/transfers', requireAuth, requireRole('CUSTOMER'), async
       });
     }
 
+    const effectiveIdempotencyKey = req.headers['idempotency-key'] ||
+      req.headers['x-idempotency-key'] ||
+      req.body?.idempotencyKey ||
+      req.body?.clientRequestId ||
+      null;
+
     const result = await executeTransfer({
       sourceAccountId,
       destinationAccountId: targetDest,
@@ -798,6 +1116,7 @@ router.post('/:accountId/transfers', requireAuth, requireRole('CUSTOMER'), async
       remarks,
       performedByUserId: req.user.userId,
       sessionCustomerId: req.user.customerId,
+      idempotencyKey: effectiveIdempotencyKey,
       _testFailurePoint
     });
 

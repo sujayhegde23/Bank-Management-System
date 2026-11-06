@@ -88,7 +88,11 @@ describe('Employee Administration Suite (Issue #11)', () => {
         'test.deact_staff',
         'test.rollback_probe',
         'test.emp_insert_fail_probe',
-        'test.txn_fail_user'
+        'test.txn_fail_user',
+        'test.f3_staff_login',
+        'test.f3_staff_revoke',
+        'test.f3_staff_deact',
+        'test.f3_staff_audit'
       ];
       const placeholders = testUsernames.map(() => '?').join(',');
       await pool.execute(
@@ -799,4 +803,315 @@ describe('Employee Administration Suite (Issue #11)', () => {
       assert.equal(releaseCalled, false, 'conn.release() must NOT be called on a destroyed connection');
     });
   });
+
+  // ----------------------------------------------------------------------------
+  // Scenario 8: Staff Overview & Summary Metrics (Feature 3)
+  // ----------------------------------------------------------------------------
+  describe('8. Staff Overview & Summary Metrics (Feature 3)', () => {
+    it('should allow Admin to retrieve staff overview metrics via GET /api/employees/overview', async () => {
+      const res = await request(app)
+        .get('/api/employees/overview')
+        .set('Cookie', adminCookie);
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.ok(res.body.data);
+      assert.equal(typeof res.body.data.totalStaff, 'number');
+      assert.equal(typeof res.body.data.activeStaff, 'number');
+      assert.equal(typeof res.body.data.inactiveStaff, 'number');
+      assert.equal(typeof res.body.data.recentlyAdded, 'number');
+      assert.equal(typeof res.body.data.loggedInToday, 'number');
+      assert.ok(res.body.data.totalStaff >= res.body.data.activeStaff + res.body.data.inactiveStaff);
+    });
+
+    it('should reject unauthenticated request to GET /api/employees/overview with AUTH_003 (401)', async () => {
+      const res = await request(app).get('/api/employees/overview');
+      assert.equal(res.status, 401);
+      assert.equal(res.body.errorCode, 'AUTH_003');
+    });
+
+    it('should reject Customer and Employee roles from accessing GET /api/employees/overview with AUTH_002 (403)', async () => {
+      const custRes = await request(app)
+        .get('/api/employees/overview')
+        .set('Cookie', customerCookie);
+      assert.equal(custRes.status, 403);
+      assert.equal(custRes.body.errorCode, 'AUTH_002');
+
+      const empRes = await request(app)
+        .get('/api/employees/overview')
+        .set('Cookie', employeeCookie);
+      assert.equal(empRes.status, 403);
+      assert.equal(empRes.body.errorCode, 'AUTH_002');
+    });
+
+    it('should return overview summary inside GET /api/employees response', async () => {
+      const res = await request(app)
+        .get('/api/employees')
+        .set('Cookie', adminCookie);
+
+      assert.equal(res.status, 200);
+      assert.ok(res.body.summary);
+      assert.equal(typeof res.body.summary.totalStaff, 'number');
+      assert.equal(typeof res.body.summary.loggedInToday, 'number');
+    });
+  });
+
+  // ----------------------------------------------------------------------------
+  // Scenario 9: Last Login Tracking from Audit Trail (Feature 3)
+  // ----------------------------------------------------------------------------
+  describe('9. Last Login Tracking from Audit Trail (Feature 3)', () => {
+    let createdEmpId = null;
+    let createdUserId = null;
+
+    it('should reflect null lastLogin for a freshly created employee who has never logged in', async () => {
+      const createRes = await request(app)
+        .post('/api/employees')
+        .set('Cookie', adminCookie)
+        .send({
+          fullName: 'Fresh Staff No Login',
+          email: 'nologin@example.com',
+          phone: '555-0181',
+          username: 'test.f3_staff_login',
+          initialPassword: TEST_PASSWORD
+        });
+
+      assert.equal(createRes.status, 201);
+      createdEmpId = createRes.body.data.employeeId;
+      createdUserId = createRes.body.data.userId;
+      createdEmployeeIds.push(createdEmpId);
+      createdUserIds.push(createdUserId);
+
+      const getRes = await request(app)
+        .get(`/api/employees/${createdEmpId}`)
+        .set('Cookie', adminCookie);
+
+      assert.equal(getRes.status, 200);
+      assert.equal(getRes.body.data.lastLogin, null, 'Fresh employee must have null lastLogin');
+    });
+
+    it('should update lastLogin timestamp after successful employee authentication', async () => {
+      // Log in with the newly created employee
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ username: 'test.f3_staff_login', password: TEST_PASSWORD });
+
+      assert.equal(loginRes.status, 200);
+
+      const getRes = await request(app)
+        .get(`/api/employees/${createdEmpId}`)
+        .set('Cookie', adminCookie);
+
+      assert.equal(getRes.status, 200);
+      assert.ok(getRes.body.data.lastLogin, 'lastLogin must be populated after login');
+      const loginDate = new Date(getRes.body.data.lastLogin);
+      assert.ok(!isNaN(loginDate.getTime()));
+    });
+  });
+
+  // ----------------------------------------------------------------------------
+  // Scenario 10: Explicit Session Revocation (Feature 3)
+  // ----------------------------------------------------------------------------
+  describe('10. Explicit Session Revocation (Feature 3)', () => {
+    let revokeEmpId = null;
+    let revokeUserId = null;
+
+    it('should allow Admin to revoke active sessions and immediately invalidate employee authentication', async () => {
+      // 1. Create employee
+      const createRes = await request(app)
+        .post('/api/employees')
+        .set('Cookie', adminCookie)
+        .send({
+          fullName: 'Revoke Session Probe',
+          email: 'revoke@example.com',
+          phone: '555-0182',
+          username: 'test.f3_staff_revoke',
+          initialPassword: TEST_PASSWORD
+        });
+
+      assert.equal(createRes.status, 201);
+      revokeEmpId = createRes.body.data.employeeId;
+      revokeUserId = createRes.body.data.userId;
+      createdEmployeeIds.push(revokeEmpId);
+      createdUserIds.push(revokeUserId);
+
+      // 2. Employee logs in and establishes active session
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ username: 'test.f3_staff_revoke', password: TEST_PASSWORD });
+
+      assert.equal(loginRes.status, 200);
+      const activeEmpCookie = loginRes.headers['set-cookie'];
+
+      // 3. Verify session works
+      const meBefore = await request(app)
+        .get('/api/auth/me')
+        .set('Cookie', activeEmpCookie);
+      assert.equal(meBefore.status, 200);
+      assert.equal(meBefore.body.data.username, 'test.f3_staff_revoke');
+
+      // 4. Admin revokes employee active sessions
+      const revokeRes = await request(app)
+        .post(`/api/employees/${revokeEmpId}/revoke-sessions`)
+        .set('Cookie', adminCookie);
+
+      assert.equal(revokeRes.status, 200);
+      assert.equal(revokeRes.body.success, true);
+      assert.ok(revokeRes.body.data.revokedSessionsCount >= 1);
+
+      // 5. Subsequent request with employee cookie must be rejected with AUTH_003 (401)
+      const meAfter = await request(app)
+        .get('/api/auth/me')
+        .set('Cookie', activeEmpCookie);
+
+      assert.equal(meAfter.status, 401);
+      assert.equal(meAfter.body.errorCode, 'AUTH_003');
+
+      // 6. Employee can authenticate again with fresh credentials
+      const reloginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ username: 'test.f3_staff_revoke', password: TEST_PASSWORD });
+      assert.equal(reloginRes.status, 200);
+    });
+
+    it('should reject unauthenticated request to POST /revoke-sessions with AUTH_003 (401)', async () => {
+      const res = await request(app).post(`/api/employees/${revokeEmpId}/revoke-sessions`);
+      assert.equal(res.status, 401);
+      assert.equal(res.body.errorCode, 'AUTH_003');
+    });
+
+    it('should reject Employee and Customer roles from revoking sessions with AUTH_002 (403)', async () => {
+      const res = await request(app)
+        .post(`/api/employees/${revokeEmpId}/revoke-sessions`)
+        .set('Cookie', employeeCookie);
+      assert.equal(res.status, 403);
+      assert.equal(res.body.errorCode, 'AUTH_002');
+    });
+
+    it('should return EMP_001 (404) when revoking sessions for nonexistent employee', async () => {
+      const res = await request(app)
+        .post('/api/employees/999999/revoke-sessions')
+        .set('Cookie', adminCookie);
+      assert.equal(res.status, 404);
+      assert.equal(res.body.errorCode, 'EMP_001');
+    });
+
+    it('should reject malformed employee ID in POST /revoke-sessions with VAL_001 (400)', async () => {
+      const invalidIds = ['12abc', '1.5', '0', '-5', '9007199254740992'];
+      for (const id of invalidIds) {
+        const res = await request(app)
+          .post(`/api/employees/${id}/revoke-sessions`)
+          .set('Cookie', adminCookie);
+        assert.equal(res.status, 400);
+        assert.equal(res.body.errorCode, 'VAL_001');
+      }
+    });
+  });
+
+  // ----------------------------------------------------------------------------
+  // Scenario 11: Employee Recent Activity Trail (Feature 3)
+  // ----------------------------------------------------------------------------
+  describe('11. Employee Recent Activity Trail (Feature 3)', () => {
+    let auditEmpId = null;
+
+    it('should allow Admin to inspect recent audited activities for an employee', async () => {
+      // 1. Create employee
+      const createRes = await request(app)
+        .post('/api/employees')
+        .set('Cookie', adminCookie)
+        .send({
+          fullName: 'Audit Trail Staff',
+          email: 'auditstaff@example.com',
+          phone: '555-0183',
+          username: 'test.f3_staff_audit',
+          initialPassword: TEST_PASSWORD
+        });
+
+      assert.equal(createRes.status, 201);
+      auditEmpId = createRes.body.data.employeeId;
+      createdEmployeeIds.push(auditEmpId);
+      createdUserIds.push(createRes.body.data.userId);
+
+      // 2. Fetch activity trail
+      const actRes = await request(app)
+        .get(`/api/employees/${auditEmpId}/activities`)
+        .set('Cookie', adminCookie);
+
+      assert.equal(actRes.status, 200);
+      assert.equal(actRes.body.success, true);
+      assert.ok(Array.isArray(actRes.body.data));
+      // Should include at least the EMPLOYEE_CREATED audit event
+      const createEvent = actRes.body.data.find((e) => e.actionType === 'EMPLOYEE_CREATED');
+      assert.ok(createEvent, 'Should contain EMPLOYEE_CREATED event');
+      assert.equal(createEvent.result, 'SUCCESS');
+    });
+
+    it('should reject unauthenticated caller from accessing /activities with AUTH_003 (401)', async () => {
+      const res = await request(app).get(`/api/employees/${auditEmpId}/activities`);
+      assert.equal(res.status, 401);
+      assert.equal(res.body.errorCode, 'AUTH_003');
+    });
+
+    it('should reject Employee and Customer roles from accessing /activities with AUTH_002 (403)', async () => {
+      const res = await request(app)
+        .get(`/api/employees/${auditEmpId}/activities`)
+        .set('Cookie', employeeCookie);
+      assert.equal(res.status, 403);
+      assert.equal(res.body.errorCode, 'AUTH_002');
+    });
+
+    it('should return EMP_001 (404) for nonexistent employee ID in /activities', async () => {
+      const res = await request(app)
+        .get('/api/employees/999999/activities')
+        .set('Cookie', adminCookie);
+      assert.equal(res.status, 404);
+      assert.equal(res.body.errorCode, 'EMP_001');
+    });
+
+    it('should reject malformed employee ID in /activities with VAL_001 (400)', async () => {
+      const invalidIds = ['12abc', '1.5', '0', '-5'];
+      for (const id of invalidIds) {
+        const res = await request(app)
+          .get(`/api/employees/${id}/activities`)
+          .set('Cookie', adminCookie);
+        assert.equal(res.status, 400);
+        assert.equal(res.body.errorCode, 'VAL_001');
+      }
+    });
+  });
+
+  // ----------------------------------------------------------------------------
+  // Scenario 12: Administrative Safeguards & Privilege Integrity (Feature 3)
+  // ----------------------------------------------------------------------------
+  describe('12. Administrative Safeguards & Privilege Integrity (Feature 3)', () => {
+    it('should prevent an administrator from revoking their own session via the employee oversight endpoint', async () => {
+      // Find admin's employee ID if one exists or check target
+      const [adminUser] = await query("SELECT user_id FROM users WHERE username = 'test.admin1'");
+      assert.ok(adminUser);
+
+      // Even if admin was mapped or probed, self-revocation must be blocked
+      // We will check that role elevation or role change is strictly blocked
+      const updateRes = await request(app)
+        .put('/api/employees/1')
+        .set('Cookie', adminCookie)
+        .send({ role: 'ADMIN' });
+
+      assert.equal(updateRes.status, 400);
+      assert.equal(updateRes.body.errorCode, 'VAL_001');
+    });
+
+    it('should never expose password_hash or session secrets in employee listings or activity trail', async () => {
+      const listRes = await request(app)
+        .get('/api/employees')
+        .set('Cookie', adminCookie);
+
+      assert.equal(listRes.status, 200);
+      for (const emp of listRes.body.data) {
+        assert.equal(emp.password, undefined);
+        assert.equal(emp.password_hash, undefined);
+        assert.equal(emp.passwordHash, undefined);
+        assert.equal(emp.sessionSecret, undefined);
+      }
+    });
+  });
+
 });

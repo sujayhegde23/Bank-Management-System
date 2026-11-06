@@ -1,17 +1,35 @@
 import { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { getSystemHealth, login, logout, getCurrentUser, getAccounts, getAccountTransactions } from './services/api';
+import { getSystemHealth, login, logout, getCurrentUser, getAccounts } from './services/api';
 import EmployeeManagement from './components/EmployeeManagement';
 import AccountManagement from './components/AccountManagement';
 import CustomerTransferModal from './components/CustomerTransferModal';
 import TransactionsView from './components/TransactionsView';
 import CustomerManagement from './components/CustomerManagement';
-import { getCustomer, updateCustomer } from './services/api';
+import AdminReports from './components/AdminReports';
+import AdminDashboard from './components/AdminDashboard';
+import AuditLogs from './components/AuditLogs';
+import EmployeeActivityHistory from './components/EmployeeActivityHistory';
+import CustomerAccountOverview from './components/CustomerAccountOverview';
+import CustomerStatements from './components/CustomerStatements';
+import CustomerProfile from './components/CustomerProfile';
+import AccountStatementModal from './components/AccountStatementModal';
+import FraudDashboard from './components/FraudDashboard';
 import './App.css';
 
 /* ==============================================================================
    Lucide-style Inline SVG Icons for Navigation & Dashboard Layout
    ============================================================================== */
+
+function IconLayoutDashboard({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="3" y="3" width="7" height="9" />
+      <rect x="14" y="3" width="7" height="5" />
+      <rect x="14" y="12" width="7" height="9" />
+      <rect x="3" y="16" width="7" height="5" />
+    </svg>
+  );
+}
 
 function IconBuilding({ size = 20, className = '' }) {
   return (
@@ -92,6 +110,16 @@ function IconLogOut({ size = 16, className = '' }) {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <polyline points="16 17 21 12 16 7" />
       <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
+function IconShieldAlert({ size = 18, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
     </svg>
   );
 }
@@ -259,6 +287,36 @@ const SCHEMA_DEFINITIONS = {
   }
 };
 
+function getPersistedNav(role) {
+  if (typeof window === 'undefined') return 'dashboard';
+  const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim();
+  const validAdminRoutes = ['dashboard', 'employees', 'customers', 'accounts', 'transactions', 'reports', 'audit-logs', 'diagnostics'];
+  const validEmployeeRoutes = ['accounts', 'overview', 'customers', 'transactions', 'my-activity'];
+  const validCustomerRoutes = ['overview', 'statements', 'profile'];
+  const allowedAdminRoutes = [...validAdminRoutes, 'fraud'];
+  const allowedEmployeeRoutes = [...validEmployeeRoutes, 'fraud'];
+
+  let stored = null;
+  try {
+    stored = sessionStorage.getItem('bms_active_nav');
+  } catch {}
+
+  if (role === 'ADMIN') {
+    if (allowedAdminRoutes.includes(rawHash)) return rawHash;
+    if (stored && allowedAdminRoutes.includes(stored)) return stored;
+    return 'dashboard';
+  } else if (role === 'EMPLOYEE') {
+    if (allowedEmployeeRoutes.includes(rawHash)) return rawHash;
+    if (stored && allowedEmployeeRoutes.includes(stored)) return stored;
+    return 'accounts';
+  } else if (role === 'CUSTOMER') {
+    if (validCustomerRoutes.includes(rawHash)) return rawHash;
+    if (stored && validCustomerRoutes.includes(stored)) return stored;
+    return 'overview';
+  }
+  return rawHash || 'dashboard';
+}
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(false);
@@ -268,63 +326,23 @@ export default function App() {
 
   // Navigation tab state: 'accounts' | 'employees' | 'diagnostics' | 'overview' | 'statements'
   const [activeNav, setActiveNav] = useState('accounts');
+
+  const handleNavChange = useCallback((tab) => {
+    setActiveNav(tab);
+    try {
+      sessionStorage.setItem('bms_active_nav', tab);
+      if (window.location.hash !== `#${tab}`) {
+        window.history.replaceState(null, '', `#${tab}`);
+      }
+    } catch {}
+  }, []);
   const [accountAction, setAccountAction] = useState(null);
   const [customerStatementModal, setCustomerStatementModal] = useState(null);
-  const [custStatementTxns, setCustStatementTxns] = useState([]);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [selectedTransferSourceId, setSelectedTransferSourceId] = useState(null);
-  const [custStatementLoading, setCustStatementLoading] = useState(false);
-  const [custStatementPage, setCustStatementPage] = useState(1);
-  const [custStatementTotalPages, setCustStatementTotalPages] = useState(1);
-  const [custStatementTotal, setCustStatementTotal] = useState(0);
-  const [custStatementType, setCustStatementType] = useState('');
+  const [selectedStatementAccountId, setSelectedStatementAccountId] = useState(null);
 
-  // Customer Profile Modal State (FR-05, FR-06, A-06)
-  const [customerProfileModalOpen, setCustomerProfileModalOpen] = useState(false);
-  const [customerProfileData, setCustomerProfileData] = useState(null);
-  const [customerProfileForm, setCustomerProfileForm] = useState({ phone: '', email: '', address: '' });
-  const [customerProfileLoading, setCustomerProfileLoading] = useState(false);
-  const [customerProfileSaving, setCustomerProfileSaving] = useState(false);
-  const [customerProfileError, setCustomerProfileError] = useState(null);
-  const [customerProfileSuccess, setCustomerProfileSuccess] = useState(null);
 
-  const openCustomerProfileModal = async () => {
-    if (!currentUser?.customerId) return;
-    setCustomerProfileModalOpen(true);
-    setCustomerProfileLoading(true);
-    setCustomerProfileError(null);
-    setCustomerProfileSuccess(null);
-    try {
-      const data = await getCustomer(currentUser.customerId);
-      setCustomerProfileData(data);
-      setCustomerProfileForm({
-        phone: data.phone || '',
-        email: data.email || '',
-        address: data.address || ''
-      });
-    } catch (err) {
-      setCustomerProfileError(err.message || 'Failed to load customer profile');
-    } finally {
-      setCustomerProfileLoading(false);
-    }
-  };
-
-  const handleCustomerProfileSave = async (e) => {
-    e.preventDefault();
-    if (!currentUser?.customerId) return;
-    setCustomerProfileSaving(true);
-    setCustomerProfileError(null);
-    setCustomerProfileSuccess(null);
-    try {
-      const res = await updateCustomer(currentUser.customerId, customerProfileForm);
-      setCustomerProfileData(res.data || res);
-      setCustomerProfileSuccess('Your contact details have been updated successfully.');
-    } catch (err) {
-      setCustomerProfileError(err.message || 'Failed to update contact details');
-    } finally {
-      setCustomerProfileSaving(false);
-    }
-  };
 
 
   useEffect(() => {
@@ -336,32 +354,6 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [customerStatementModal]);
-
-  const loadCustomerStatement = async (account, page = 1, type = '') => {
-    if (!account) return;
-    setCustomerStatementModal(account);
-    setCustStatementLoading(true);
-    setCustStatementPage(page);
-    setCustStatementType(type);
-    try {
-      const res = await getAccountTransactions(account.accountId, {
-        page,
-        size: 10,
-        type: type || undefined
-      });
-      const txns = res?.transactions || res?.items || [];
-      setCustStatementTxns(txns);
-      setCustStatementTotal(res?.pagination?.total || res?.total || txns.length);
-      setCustStatementTotalPages(res?.pagination?.totalPages || res?.totalPages || Math.ceil((res?.total || txns.length) / 10) || 1);
-    } catch (err) {
-      console.error('Failed to load statement transactions:', err);
-      setCustStatementTxns([]);
-      setCustStatementTotal(0);
-      setCustStatementTotalPages(1);
-    } finally {
-      setCustStatementLoading(false);
-    }
-  };
 
   // Customer retail accounts state (FR-09)
   const [customerAccounts, setCustomerAccounts] = useState([]);
@@ -423,14 +415,13 @@ export default function App() {
       .then((user) => {
         if (!isCancelled && user) {
           setCurrentUser(user);
-          // Set sensible initial navigation based on role
-          if (user.role === 'ADMIN') {
-            setActiveNav('employees');
-          } else if (user.role === 'EMPLOYEE') {
-            setActiveNav('accounts');
-          } else {
-            setActiveNav('overview');
-          }
+          // Set persisted or default navigation based on role (Feature 5)
+          const initialNav = getPersistedNav(user.role);
+          setActiveNav(initialNav);
+          try {
+            sessionStorage.setItem('bms_active_nav', initialNav);
+            window.history.replaceState(null, '', `#${initialNav}`);
+          } catch {}
         }
       })
       .catch(() => {
@@ -441,6 +432,20 @@ export default function App() {
       isCancelled = true;
     };
   }, []);
+
+  // Hash synchronization listener for browser forward/back buttons (Feature 5)
+  useEffect(() => {
+    const handleHash = () => {
+      if (currentUser) {
+        const validated = getPersistedNav(currentUser.role);
+        if (validated && validated !== activeNav) {
+          setActiveNav(validated);
+        }
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, [currentUser, activeNav]);
 
   // When active user is Customer, fetch their accounts live (FR-09)
   useEffect(() => {
@@ -470,13 +475,12 @@ export default function App() {
       const user = await login({ username, password });
       setCurrentUser(user);
       setPassword('');
-      if (user.role === 'ADMIN') {
-        setActiveNav('employees');
-      } else if (user.role === 'EMPLOYEE') {
-        setActiveNav('accounts');
-      } else {
-        setActiveNav('overview');
-      }
+      const initialNav = getPersistedNav(user.role);
+      setActiveNav(initialNav);
+      try {
+        sessionStorage.setItem('bms_active_nav', initialNav);
+        window.history.replaceState(null, '', `#${initialNav}`);
+      } catch {}
     } catch (err) {
       setAuthError(err.message || 'Invalid username or password');
     } finally {
@@ -664,32 +668,34 @@ export default function App() {
 
         {/* Navigation Sections */}
         <nav className="sidebar-nav-menu">
-          <div className="sidebar-group-title">
-            {isAdmin ? 'Administration' : isEmployee ? 'Branch Operations' : 'Account Services'}
-          </div>
-
-          {/* ADMINISTRATOR NAVIGATION */}
-          {isAdmin && (
+          {/* ADMINISTRATOR NAVIGATION (Feature 5: Structured Architecture) */}
+          {isAdmin ? (
             <>
-              {/* Employee Management (Issue #11) */}
+              {/* SECTION 1: OVERVIEW */}
+              <div className="sidebar-group-title">Overview</div>
               <button
+                id="nav-admin-dashboard-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'employees' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('employees')}
+                className={`sidebar-nav-item active-item ${activeNav === 'dashboard' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('dashboard')}
+                title="Executive banking dashboard and real-time overview"
               >
-                <IconUserCheck size={17} />
-                <span>Employees</span>
+                <IconLayoutDashboard size={17} />
+                <span>Dashboard</span>
                 <span className="nav-badge-active">Active</span>
               </button>
 
-              {/* Bank Accounts Oversight (Issue #7) */}
+              {/* SECTION 2: MANAGEMENT */}
+              <div className="sidebar-group-title" style={{ marginTop: '1.25rem' }}>Management</div>
               <button
+                id="nav-admin-employees-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'accounts' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('accounts')}
+                className={`sidebar-nav-item active-item ${activeNav === 'employees' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('employees')}
+                title="Manage staff, credentials, session revocation & status (Issue #11, Feature 3)"
               >
-                <IconLandmark size={17} />
-                <span>Bank Accounts</span>
+                <IconUserCheck size={17} />
+                <span>Employee Management</span>
                 <span className="nav-badge-active">Active</span>
               </button>
 
@@ -697,35 +703,93 @@ export default function App() {
                 id="nav-admin-customers-btn"
                 type="button"
                 className={`sidebar-nav-item active-item ${activeNav === 'customers' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('customers')}
-                title="View and manage customers (FR-05, FR-06)"
+                onClick={() => handleNavChange('customers')}
+                title="Register and manage customer profiles (FR-05, FR-06)"
               >
                 <IconUsers size={17} />
-                <span>Customers</span>
+                <span>Customer Management</span>
                 <span className="nav-badge-active">Active</span>
               </button>
 
               <button
-                id="nav-admin-transactions-btn"
+                id="nav-admin-accounts-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'transactions' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('transactions')}
-                title="Audit bank-wide transaction records (FR-21)"
+                className={`sidebar-nav-item active-item ${activeNav === 'accounts' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('accounts')}
+                title="Oversee bank account lifecycle, balances & status (Issue #7)"
               >
-                <IconCreditCard size={17} />
-                <span>Transactions</span>
+                <IconLandmark size={17} />
+                <span>Account Management</span>
                 <span className="nav-badge-active">Active</span>
               </button>
 
-              <div
-                className="sidebar-nav-item disabled-item"
-                title="Reporting module scheduled for Sprint 2"
+              {/* SECTION 3: MONITORING */}
+              <div className="sidebar-group-title" style={{ marginTop: '1.25rem' }}>Monitoring</div>
+              <button
+                id="nav-admin-transactions-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'transactions' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('transactions')}
+                title="Audit bank-wide financial transactions (FR-21)"
+              >
+                <IconCreditCard size={17} />
+                <span>Transaction Ledger</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
+
+              <button
+                id="nav-admin-reports-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'reports' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('reports')}
+                title="Executive reports, KPI analytics & CSV export (Issue #12, Feature 4)"
               >
                 <IconFileText size={17} />
-                <span>Reports</span>
-                <span className="nav-badge-pending">Sprint 2</span>
-              </div>
+                <span>Reports &amp; Analytics</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
+
+              <button
+                id="nav-admin-audit-logs-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'audit-logs' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('audit-logs')}
+                title="Centralized system audit logs and activity monitoring (Feature 2)"
+              >
+                <IconShield size={17} />
+                <span>Audit Logs</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
+
+              <button
+                id="nav-admin-fraud-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'fraud' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('fraud')}
+                title="Fraud detection alerts, investigations, and rule management (Phase 4)"
+              >
+                <IconShieldAlert size={17} />
+                <span>Fraud Monitoring</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
+
+              {/* SECTION 4: SYSTEM */}
+              <div className="sidebar-group-title" style={{ marginTop: '1.25rem' }}>System</div>
+              <button
+                id="nav-admin-diagnostics-btn"
+                type="button"
+                className={`sidebar-nav-item ${activeNav === 'diagnostics' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('diagnostics')}
+                title="Database health diagnostics, connection pool status & schema"
+              >
+                <IconActivity size={17} />
+                <span>System Diagnostics</span>
+              </button>
             </>
+          ) : (
+            <div className="sidebar-group-title">
+              {isEmployee ? 'Branch Operations' : 'Account Services'}
+            </div>
           )}
 
           {/* EMPLOYEE NAVIGATION */}
@@ -736,7 +800,7 @@ export default function App() {
                 id="nav-manage-accounts-btn"
                 type="button"
                 className={`sidebar-nav-item active-item ${activeNav === 'accounts' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('accounts')}
+                onClick={() => handleNavChange('accounts')}
               >
                 <IconLandmark size={17} />
                 <span>Manage Accounts</span>
@@ -744,19 +808,33 @@ export default function App() {
               </button>
 
               <button
+                id="nav-employee-profile-btn"
                 type="button"
                 className={`sidebar-nav-item ${activeNav === 'overview' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('overview')}
+                onClick={() => handleNavChange('overview')}
+                title="View your staff profile and operational credentials"
               >
                 <IconUserCheck size={17} />
-                <span>Staff Overview</span>
+                <span>My Profile</span>
+              </button>
+
+              <button
+                id="nav-employee-activity-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'my-activity' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('my-activity')}
+                title="Review your personal banking operations and activity history (Feature 4)"
+              >
+                <IconHistory size={17} />
+                <span>My Activity</span>
+                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
                 id="nav-employee-customers-btn"
                 type="button"
                 className={`sidebar-nav-item active-item ${activeNav === 'customers' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('customers')}
+                onClick={() => handleNavChange('customers')}
                 title="Register and manage customers (FR-04, FR-05, FR-06)"
               >
                 <IconUsers size={17} />
@@ -805,6 +883,18 @@ export default function App() {
                 <span>Transactions</span>
                 <span className="nav-badge-active">Active</span>
               </button>
+
+              <button
+                id="nav-employee-fraud-btn"
+                type="button"
+                className={`sidebar-nav-item active-item ${activeNav === 'fraud' ? 'selected' : ''}`}
+                onClick={() => setActiveNav('fraud')}
+                title="View fraud alerts, investigation cases, and risk metrics (Phase 4)"
+              >
+                <IconShieldAlert size={17} />
+                <span>Fraud Monitoring</span>
+                <span className="nav-badge-active">Active</span>
+              </button>
             </>
           )}
 
@@ -839,8 +929,8 @@ export default function App() {
               <button
                 id="nav-customer-profile-btn"
                 type="button"
-                className={`sidebar-nav-item ${customerProfileModalOpen ? 'selected' : ''}`}
-                onClick={openCustomerProfileModal}
+                className={`sidebar-nav-item ${activeNav === 'profile' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('profile')}
                 title="View and update your contact details (FR-06)"
               >
                 <IconUserCheck size={17} />
@@ -852,10 +942,7 @@ export default function App() {
                 type="button"
                 className={`sidebar-nav-item ${activeNav === 'statements' ? 'selected' : ''}`}
                 onClick={() => {
-                  setActiveNav('statements');
-                  if (customerAccounts.length > 0) {
-                    loadCustomerStatement(customerAccounts[0], 1, '');
-                  }
+                  handleNavChange('statements');
                 }}
                 title="View bank account statements and ledger records (FR-20)"
               >
@@ -866,19 +953,7 @@ export default function App() {
             </>
           )}
 
-          <div className="sidebar-group-title" style={{ marginTop: '1.25rem' }}>
-            System Tools
-          </div>
 
-          {/* Diagnostics View (Functional preservation of health/schema tools) */}
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeNav === 'diagnostics' ? 'selected' : ''}`}
-            onClick={() => setActiveNav('diagnostics')}
-          >
-            <IconActivity size={17} />
-            <span>System Diagnostics</span>
-          </button>
         </nav>
 
         {/* Sidebar Footer: Profile & Logout */}
@@ -920,14 +995,26 @@ export default function App() {
             </span>
             <span className="breadcrumb-separator">/</span>
             <span className="breadcrumb-current">
-              {activeNav === 'diagnostics'
+              {activeNav === 'profile'
+                ? 'My Profile'
+                : activeNav === 'diagnostics'
                 ? 'System Diagnostics'
+                : activeNav === 'dashboard'
+                ? 'Executive Dashboard'
                 : activeNav === 'accounts'
                 ? 'Account Management'
                 : activeNav === 'employees'
                 ? 'Employee Management'
                 : activeNav === 'transactions'
                 ? 'Transaction Ledger'
+                : activeNav === 'reports'
+                ? 'Reports & Analytics'
+                : activeNav === 'audit-logs'
+                ? 'System Audit Logs'
+                : isEmployee && activeNav === 'my-activity'
+                ? 'My Activity History'
+                : isEmployee && activeNav === 'overview'
+                ? 'My Profile'
                 : 'Workspace Overview'}
             </span>
           </div>
@@ -937,7 +1024,7 @@ export default function App() {
             <div className="topbar-status-pill">
               <span className={`status-pulse-dot ${isDbConnected ? 'pulse-green' : 'pulse-amber'}`} />
               <span className="status-pill-text">
-                {isDbConnected ? 'MySQL Connected' : 'DB Standby'}
+                {isDbConnected ? (isCustomer ? 'System Online' : 'MySQL Connected') : (isCustomer ? 'Service Offline' : 'DB Standby')}
               </span>
             </div>
 
@@ -956,7 +1043,7 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="dashboard-content-area">
-          {activeNav === 'diagnostics' ? (
+          {activeNav === 'diagnostics' && isAdmin ? (
             /* ==================================================================
                DIAGNOSTICS VIEW (Preserves Health & Schema Tools)
                ================================================================== */
@@ -1053,6 +1140,28 @@ export default function App() {
                 </table>
               </div>
             </div>
+          ) : isCustomer && activeNav === 'profile' ? (
+            /* ==================================================================
+               CUSTOMER: MY PROFILE PAGE (Feature 5, FR-05, FR-06, A-06)
+               ================================================================== */
+            <div className="role-portal-view">
+              <CustomerProfile
+                currentUser={currentUser}
+                onNavigateToOverview={() => handleNavChange('overview')}
+              />
+            </div>
+          ) : isCustomer && activeNav === 'statements' ? (
+            /* ==================================================================
+               CUSTOMER: ACCOUNT STATEMENTS PAGE (Feature 4, FR-20)
+               ================================================================== */
+            <div className="role-portal-view">
+              <CustomerStatements
+                accounts={customerAccounts}
+                selectedAccountId={selectedStatementAccountId}
+                currentUser={currentUser}
+                onNavigateToOverview={() => handleNavChange('overview')}
+              />
+            </div>
           ) : isCustomer ? (
             /* ==================================================================
                CUSTOMER: RETAIL BANKING PORTAL (FR-09 Live Account Overview)
@@ -1071,121 +1180,21 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Verified Accounts Live Ledger Section (FR-09) */}
-              <div className="customer-accounts-section" style={{ marginBottom: '2rem' }}>
-                <div className="emp-page-header" style={{ marginBottom: '1rem' }}>
-                  <div>
-                    <h2 className="emp-page-title" style={{ fontSize: '1.25rem' }}>Your Bank Accounts</h2>
-                    <p className="emp-page-subtitle">
-                      Live account balances and operational status from the core banking ledger (FR-09).
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    <button
-                      type="button"
-                      className="btn-secondary-custom"
-                      onClick={loadCustomerAccounts}
-                      disabled={custAccountsLoading}
-                    >
-                      <IconCreditCard size={15} />
-                      <span>{custAccountsLoading ? 'Refreshing...' : 'Refresh Balance'}</span>
-                    </button>
-                    <button
-                      id="customer-header-transfer-btn"
-                      type="button"
-                      className="btn-primary-custom"
-                      onClick={() => {
-                        setSelectedTransferSourceId(null);
-                        setTransferModalOpen(true);
-                      }}
-                      disabled={customerAccounts.filter((a) => a.status === 'ACTIVE').length === 0}
-                      style={{ gap: '0.45rem', fontSize: '0.85rem' }}
-                      title="Initiate fund transfer between accounts (FR-15)"
-                    >
-                      <IconSend size={15} />
-                      <span>Transfer Funds</span>
-                    </button>
-                  </div>
-                </div>
-
-                {custAccountsLoading ? (
-                  <div className="table-skeleton-container" style={{ padding: '1rem' }}>
-                    <div className="skeleton-row" />
-                    <div className="skeleton-row" />
-                  </div>
-                ) : customerAccounts.length === 0 ? (
-                  <div className="empty-state-box" style={{ padding: '2rem' }}>
-                    <IconCreditCard size={32} className="empty-state-icon" />
-                    <h3>No Bank Accounts Linked</h3>
-                    <p>Please contact branch staff to open a savings or current account for your customer profile.</p>
-                  </div>
-                ) : (
-                  <div className="emp-stats-grid">
-                    {customerAccounts.map((acc) => {
-                      const numVal = Number(acc.balance) || 0;
-                      const formatted = new Intl.NumberFormat('en-IN', {
-                        style: 'currency',
-                        currency: 'INR',
-                        minimumFractionDigits: 2
-                      }).format(numVal);
-
-                      return (
-                        <div key={acc.accountId} className="emp-stat-card" style={{ padding: '1.25rem 1.5rem' }}>
-                          <div className="stat-icon-wrapper active-icon">
-                            <IconLandmark size={22} />
-                          </div>
-                          <div className="stat-details" style={{ width: '100%' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span className="stat-label">{acc.accountType} ACCOUNT</span>
-                              <span className={`status-badge-custom badge-${String(acc.status).toLowerCase()}`} style={{ fontSize: '0.68rem', padding: '0.15rem 0.5rem' }}>
-                                <span className="status-dot" />
-                                <span>{acc.status}</span>
-                              </span>
-                            </div>
-                            <span className="stat-value font-mono" style={{ fontSize: '1.4rem', color: '#60a5fa', margin: '0.35rem 0' }}>
-                              {acc.accountNumber}
-                            </span>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '0.25rem' }}>
-                              <span className="stat-desc">Available Balance</span>
-                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: '800', fontSize: '1.25rem', color: '#f8fafc' }}>
-                                {formatted}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem' }}>
-                              <button
-                                type="button"
-                                className="btn-secondary-custom"
-                                style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
-                                onClick={async () => {
-                                  loadCustomerStatement(acc, 1, '');
-                                }}
-                              >
-                                <IconHistory size={14} />
-                                <span>Statement</span>
-                              </button>
-                              {acc.status === 'ACTIVE' && (
-                                <button
-                                  type="button"
-                                  className="btn-primary-custom"
-                                  style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
-                                  onClick={() => {
-                                    setSelectedTransferSourceId(acc.accountId);
-                                    setTransferModalOpen(true);
-                                  }}
-                                  title="Transfer funds from this account (FR-15)"
-                                >
-                                  <IconSend size={14} />
-                                  <span>Transfer</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {/* Customer Account Overview Redesign (Feature 1) */}
+              <CustomerAccountOverview
+                accounts={customerAccounts}
+                loading={custAccountsLoading}
+                onRefresh={loadCustomerAccounts}
+                currentUser={currentUser}
+                onViewStatement={(acc) => {
+                  setSelectedStatementAccountId(acc.accountId || acc.account_id);
+                  handleNavChange('statements');
+                }}
+                onTransfer={(sourceAccountId) => {
+                  setSelectedTransferSourceId(sourceAccountId || null);
+                  setTransferModalOpen(true);
+                }}
+              />
 
               {/* Customer Roadmap Notice Box */}
               <div className="roadmap-notice-box">
@@ -1198,6 +1207,26 @@ export default function App() {
                 </p>
               </div>
             </div>
+          ) : activeNav === 'diagnostics' && !isAdmin ? (
+            <div className="empty-state-box" style={{ padding: '3rem', textAlign: 'center' }}>
+              <IconAlertCircle size={40} className="text-danger" style={{ marginBottom: '1rem' }} />
+              <h2>Access Restricted</h2>
+              <p style={{ color: '#94a3b8', maxWidth: '480px', margin: '0.5rem auto 1.5rem' }}>
+                System Diagnostics is restricted to Administrators only. Retail banking customers and branch operations staff cannot access system telemetry or database diagnostics.
+              </p>
+              <button
+                type="button"
+                className="btn-primary-custom"
+                onClick={() => handleNavChange(isEmployee ? 'accounts' : 'overview')}
+              >
+                Return to Workspace
+              </button>
+            </div>
+          ) : activeNav === 'dashboard' && isAdmin ? (
+            /* ==================================================================
+               ADMINISTRATOR: EXECUTIVE DASHBOARD (Feature 1)
+               ================================================================== */
+            <AdminDashboard currentUser={currentUser} onNavigate={(tab) => handleNavChange(tab)} />
           ) : activeNav === 'customers' && (isEmployee || isAdmin) ? (
             /* ==================================================================
                CUSTOMER DIRECTORY & MANAGEMENT (Issue #6, FR-04, FR-05, FR-06)
@@ -1219,9 +1248,29 @@ export default function App() {
                TRANSACTION AUDIT LEDGER (Issue #10, FR-21, NFR-10, TC-19)
                ================================================================== */
             <TransactionsView user={currentUser} />
+          ) : activeNav === 'reports' && isAdmin ? (
+            /* ==================================================================
+               ADMINISTRATOR: REPORTS & ANALYTICS (Issue #12, FR-25, TC-19)
+               ================================================================== */
+            <AdminReports currentUser={currentUser} />
+          ) : activeNav === 'audit-logs' && isAdmin ? (
+            /* ==================================================================
+               ADMINISTRATOR: CENTRALIZED AUDIT LOGS (Feature 2)
+               ================================================================== */
+            <AuditLogs currentUser={currentUser} />
+          ) : activeNav === 'fraud' && (isAdmin || isEmployee) ? (
+            /* ==================================================================
+               FRAUD MONITORING DASHBOARD (Phase 4)
+               ================================================================== */
+            <FraudDashboard currentUser={currentUser} />
+          ) : isEmployee && activeNav === 'my-activity' ? (
+            /* ==================================================================
+               EMPLOYEE: PERSONAL ACTIVITY HISTORY (Feature 4)
+               ================================================================== */
+            <EmployeeActivityHistory currentUser={currentUser} />
           ) : isEmployee && activeNav === 'overview' ? (
             /* ==================================================================
-               EMPLOYEE: BRANCH OPERATIONS OVERVIEW
+               EMPLOYEE: MY PROFILE (FEATURE 1 §4)
                ================================================================== */
             <div className="role-portal-view">
               <div className="portal-banner">
@@ -1229,9 +1278,9 @@ export default function App() {
                   <IconUserCheck size={28} />
                 </div>
                 <div>
-                  <h1 className="portal-title">Bank Staff Operations Workspace</h1>
+                  <h1 className="portal-title">My Employee Profile</h1>
                   <p className="portal-subtitle">
-                    Authorized terminal for <strong>{currentUser.displayName}</strong> &bull; Staff ID #{currentUser.employeeId || '1'}
+                    Operational staff profile for <strong>{currentUser.displayName}</strong> &bull; Staff ID #{currentUser.employeeId || '1'}
                   </p>
                 </div>
               </div>
@@ -1244,8 +1293,8 @@ export default function App() {
                   </div>
                   <div className="stat-details">
                     <span className="stat-label">Assigned Role</span>
-                    <span className="stat-value" style={{ fontSize: '1.25rem', color: '#60a5fa' }}>EMPLOYEE</span>
-                    <span className="stat-desc">Branch staff clearance</span>
+                    <span className="stat-value" style={{ fontSize: '1.25rem', color: '#60a5fa' }}>{currentUser.role}</span>
+                    <span className="stat-desc">Branch Operations Staff</span>
                   </div>
                 </div>
 
@@ -1266,37 +1315,81 @@ export default function App() {
                   </div>
                   <div className="stat-details">
                     <span className="stat-label">Operational Status</span>
-                    <span className="stat-value text-success" style={{ fontSize: '1.25rem' }}>ACTIVE</span>
-                    <span className="stat-desc">Valid session established</span>
+                    <span className="stat-value text-success" style={{ fontSize: '1.25rem' }}>{currentUser.status || 'ACTIVE'}</span>
+                    <span className="stat-desc">Active authenticated session</span>
                   </div>
                 </div>
               </div>
 
-              {/* Action Jump to Accounts */}
+              {/* Detailed Profile Summary */}
+              <div className="emp-table-card" style={{ padding: '1.5rem', marginBottom: '1.75rem' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#f8fafc', marginBottom: '1rem' }}>Employee Information</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                  <div style={{ background: '#090e1a', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Employee Name</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc', marginTop: '0.25rem' }}>{currentUser.displayName}</div>
+                  </div>
+                  <div style={{ background: '#090e1a', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Staff Identifier</div>
+                    <div className="font-mono" style={{ fontSize: '0.95rem', fontWeight: 600, color: '#60a5fa', marginTop: '0.25rem' }}>#{currentUser.employeeId || '1'}</div>
+                  </div>
+                  <div style={{ background: '#090e1a', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Account Creation Date</div>
+                    <div className="font-mono" style={{ fontSize: '0.9rem', color: '#cbd5e1', marginTop: '0.25rem' }}>
+                      {currentUser.createdAt ? new Date(currentUser.createdAt).toLocaleDateString() : 'System Default'}
+                    </div>
+                  </div>
+                  <div style={{ background: '#090e1a', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Security Clearance</div>
+                    <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>Branch Operational Role &bull; Read-Only Profile</div>
+                  </div>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '1rem', fontStyle: 'italic' }}>
+                  * Employee role assignments, operational statuses, and security permissions are strictly managed by Bank Administrators (FR-23, FR-24).
+                </p>
+              </div>
+
+              {/* Quick Jump Navigation */}
               <div className="roadmap-notice-box">
                 <div className="roadmap-notice-header">
                   <IconLandmark size={20} style={{ color: '#38bdf8' }} />
-                  <h4>Bank Account Creation &amp; Access Management (Issue #7 Ready)</h4>
+                  <h4>Branch Operational Workspaces</h4>
                 </div>
                 <p>
-                  As an authorized Bank Employee, you have full clearance to open bank accounts for registered customers, inspect account balances, and toggle account operational status (Active, Inactive, Frozen) in accordance with bank policy (FR-07, FR-08, FR-09, FR-10, FR-11).
+                  Access your core banking modules below for opening accounts, registering customers, processing counter transactions, and reviewing the ledger.
                 </p>
                 <div className="roadmap-actions-row">
                   <button
                     type="button"
                     className="btn-primary-custom"
-                    onClick={() => setActiveNav('accounts')}
+                    onClick={() => handleNavChange('accounts')}
                   >
                     <IconLandmark size={16} />
-                    <span>Open Account Management Dashboard</span>
+                    <span>Manage Accounts</span>
                   </button>
                   <button
                     type="button"
                     className="btn-secondary-custom"
-                    onClick={() => setActiveNav('diagnostics')}
+                    onClick={() => handleNavChange('customers')}
                   >
-                    <IconActivity size={15} />
-                    <span>System Diagnostics</span>
+                    <IconUsers size={15} />
+                    <span>Customer Directory</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary-custom"
+                    onClick={() => handleNavChange('transactions')}
+                  >
+                    <IconCreditCard size={15} />
+                    <span>Transaction Ledger</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary-custom"
+                    onClick={() => handleNavChange('my-activity')}
+                  >
+                    <IconHistory size={15} />
+                    <span>My Activity</span>
                   </button>
                 </div>
               </div>
@@ -1403,17 +1496,8 @@ export default function App() {
                                 type="button"
                                 className="btn-secondary-custom"
                                 style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
-                                onClick={async () => {
+                                onClick={() => {
                                   setCustomerStatementModal(acc);
-                                  setCustStatementLoading(true);
-                                  try {
-                                    const res = await getAccountTransactions(acc.accountId, { page: 1, size: 20 });
-                                    setCustStatementTxns(res?.transactions || []);
-                                  } catch {
-                                    setCustStatementTxns([]);
-                                  } finally {
-                                    setCustStatementLoading(false);
-                                  }
                                 }}
                               >
                                 <IconHistory size={14} />
@@ -1481,10 +1565,10 @@ export default function App() {
                   <button
                     type="button"
                     className="btn-secondary-custom"
-                    onClick={() => setActiveNav('diagnostics')}
+                    onClick={() => handleNavChange('profile')}
                   >
-                    <IconActivity size={15} />
-                    <span>View System Diagnostics</span>
+                    <IconUserCheck size={15} />
+                    <span>View My Profile</span>
                   </button>
                   <button
                     type="button"
@@ -1512,384 +1596,15 @@ export default function App() {
       />
 
 
-      {/* Customer Profile & Contact Details Modal (FR-05, FR-06, SRS A-06) */}
-      {customerProfileModalOpen && createPortal(
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="customer-profile-modal-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !customerProfileSaving) {
-              setCustomerProfileModalOpen(false);
-            }
-          }}
-        >
-          <div className="modal-card" style={{ maxWidth: '560px' }}>
-            <div className="modal-header">
-              <div className="modal-title-box">
-                <IconUserCheck size={20} className="modal-header-icon" />
-                <h3 id="customer-profile-modal-title">My Customer Profile</h3>
-              </div>
-              <button
-                type="button"
-                className="modal-close-icon-btn"
-                onClick={() => setCustomerProfileModalOpen(false)}
-                disabled={customerProfileSaving}
-                aria-label="Close dialog"
-              >
-                <IconX size={18} />
-              </button>
-            </div>
 
-            {customerProfileLoading ? (
-              <div style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8' }}>
-                <IconRefreshCw size={24} className="spin-icon" style={{ margin: '0 auto 0.75rem auto' }} />
-                <p style={{ margin: 0, fontSize: '0.85rem' }}>Loading customer profile...</p>
-              </div>
-            ) : customerProfileData ? (
-              <form onSubmit={handleCustomerProfileSave}>
-                <div className="modal-body-content" style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {customerProfileError && (
-                    <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', padding: '0.65rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem' }} role="alert">
-                      {customerProfileError}
-                    </div>
-                  )}
 
-                  {customerProfileSuccess && (
-                    <div style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#6ee7b7', padding: '0.65rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem' }} role="alert">
-                      {customerProfileSuccess}
-                    </div>
-                  )}
-
-                  {/* Identity Summary Card (Read-Only) */}
-                  <div style={{ background: '#090e1a', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '6px', padding: '0.85rem 1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.35rem' }}>
-                      <span style={{ fontSize: '0.725rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Account Holder Name</span>
-                      <span style={{ fontSize: '0.725rem', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>Customer ID #{customerProfileData.customerId}</span>
-                    </div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f8fafc' }}>
-                      {customerProfileData.fullName}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.35rem' }}>
-                      Date of Birth: <strong style={{ color: '#cbd5e1' }}>{customerProfileData.dateOfBirth ? customerProfileData.dateOfBirth.slice(0, 10) : '—'}</strong> &bull; Username: <strong style={{ color: '#cbd5e1' }}>@{customerProfileData.username}</strong>
-                    </div>
-                    <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.4rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.4rem' }}>
-                      Identity details are verified by branch staff and cannot be modified online (SRS Assumption A-06).
-                    </div>
-                  </div>
-
-                  {/* Editable Contact Fields (FR-06) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                    <div>
-                      <label htmlFor="cust-phone-input" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.3rem' }}>
-                        Phone Number
-                      </label>
-                      <input
-                        id="cust-phone-input"
-                        type="text"
-                        style={{ width: '100%', padding: '0.5rem 0.75rem' }}
-                        value={customerProfileForm.phone}
-                        onChange={(e) => setCustomerProfileForm({ ...customerProfileForm, phone: e.target.value })}
-                        disabled={customerProfileSaving}
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="cust-email-input" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.3rem' }}>
-                        Email Address
-                      </label>
-                      <input
-                        id="cust-email-input"
-                        type="email"
-                        style={{ width: '100%', padding: '0.5rem 0.75rem' }}
-                        value={customerProfileForm.email}
-                        onChange={(e) => setCustomerProfileForm({ ...customerProfileForm, email: e.target.value })}
-                        disabled={customerProfileSaving}
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="cust-address-input" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '0.3rem' }}>
-                        Residential Address
-                      </label>
-                      <input
-                        id="cust-address-input"
-                        type="text"
-                        style={{ width: '100%', padding: '0.5rem 0.75rem' }}
-                        value={customerProfileForm.address}
-                        onChange={(e) => setCustomerProfileForm({ ...customerProfileForm, address: e.target.value })}
-                        disabled={customerProfileSaving}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="modal-footer" style={{ padding: '0.85rem 1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                  <button
-                    type="button"
-                    className="btn-secondary-custom"
-                    onClick={() => setCustomerProfileModalOpen(false)}
-                    disabled={customerProfileSaving}
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-primary-custom"
-                    disabled={customerProfileSaving}
-                  >
-                    {customerProfileSaving ? 'Saving Contact Info...' : 'Update Contact Info'}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-                Profile details unavailable.
-              </div>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Customer Account Statement Modal */}
-      {customerStatementModal && createPortal(
-        <div className="modal-overlay" onClick={() => setCustomerStatementModal(null)}>
-          <div className="modal-card" style={{ maxWidth: '840px' }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title-box">
-                <IconHistory size={22} className="modal-header-icon text-info" />
-                <h3>Account Statement: {customerStatementModal.accountNumber}</h3>
-              </div>
-              <button
-                type="button"
-                className="modal-close-icon-btn"
-                onClick={() => setCustomerStatementModal(null)}
-                aria-label="Close statement"
-              >
-                <IconX size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body-content" style={{ maxHeight: '68vh', overflowY: 'auto' }}>
-              {/* Multi-Account Selector if Customer has more than 1 account */}
-              {customerAccounts.length > 1 && (
-                <div style={{ marginBottom: '1rem', background: '#090e1a', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <label htmlFor="statement-account-select" style={{ display: 'block', fontSize: '0.725rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '0.35rem', fontWeight: 700 }}>
-                    Switch Account Statement
-                  </label>
-                  <select
-                    id="statement-account-select"
-                    value={customerStatementModal.accountId}
-                    onChange={(e) => {
-                      const selected = customerAccounts.find((a) => String(a.accountId) === e.target.value);
-                      if (selected) {
-                        loadCustomerStatement(selected, 1, custStatementType);
-                      }
-                    }}
-                    style={{
-                      background: '#1e293b',
-                      border: '1px solid rgba(255, 255, 255, 0.12)',
-                      color: '#f8fafc',
-                      borderRadius: '6px',
-                      padding: '0.45rem 0.65rem',
-                      fontSize: '0.825rem',
-                      width: '100%',
-                      outline: 'none'
-                    }}
-                  >
-                    {customerAccounts.map((acc) => (
-                      <option key={acc.accountId} value={acc.accountId}>
-                        {acc.accountNumber} ({acc.accountType}) — Available: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(acc.balance) || 0)} [{acc.status}]
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Account Summary Banner */}
-              <div className="txn-account-summary-box" style={{ background: '#090e1a', padding: '0.85rem 1rem', borderRadius: '6px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div>
-                  <div style={{ color: '#60a5fa', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{customerStatementModal.accountNumber}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                    {customerStatementModal.accountType} Account • Status: <span style={{ color: customerStatementModal.status === 'ACTIVE' ? '#34d399' : '#f87171', fontWeight: 600 }}>{customerStatementModal.status}</span>
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase' }}>Available Balance</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.2rem', color: '#f8fafc' }}>
-                    {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(customerStatementModal.balance) || 0)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Header & Filter Row */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
-                  Transaction History (FR-20)
-                </h4>
-
-                {/* Filter Pills */}
-                <div style={{ display: 'flex', gap: '0.35rem' }}>
-                  {[
-                    { label: 'All', val: '' },
-                    { label: 'Deposits', val: 'DEPOSIT' },
-                    { label: 'Withdrawals', val: 'WITHDRAWAL' },
-                    { label: 'Transfers', val: 'TRANSFER' }
-                  ].map((f) => (
-                    <button
-                      key={f.label}
-                      type="button"
-                      onClick={() => loadCustomerStatement(customerStatementModal, 1, f.val)}
-                      style={{
-                        background: custStatementType === f.val ? '#2563eb' : '#1e293b',
-                        color: custStatementType === f.val ? '#ffffff' : '#94a3b8',
-                        border: '1px solid',
-                        borderColor: custStatementType === f.val ? '#3b82f6' : 'rgba(255, 255, 255, 0.08)',
-                        padding: '0.2rem 0.55rem',
-                        borderRadius: '9999px',
-                        fontSize: '0.7rem',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {custStatementLoading ? (
-                <div style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8' }}>Loading statement ledger...</div>
-              ) : custStatementTxns.length === 0 ? (
-                <div style={{ padding: '2.5rem', textAlign: 'center', color: '#64748b' }}>
-                  No transaction records found for this account.
-                </div>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="emp-table-custom" style={{ width: '100%', fontSize: '0.8rem' }}>
-                    <thead>
-                      <tr>
-                        <th>Date &amp; Time</th>
-                        <th>Reference</th>
-                        <th>Type</th>
-                        <th>Transaction Flow</th>
-                        <th>Remarks</th>
-                        <th style={{ textAlign: 'right' }}>Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {custStatementTxns.map((tx) => {
-                        const typeUpper = String(tx.type || tx.transaction_type || '').toUpperCase();
-                        const isCredit = tx.direction === 'CREDIT' || (typeUpper === 'DEPOSIT');
-                        
-                        let flowDesc = '—';
-                        if (typeUpper === 'DEPOSIT') {
-                          flowDesc = 'Cash Deposit at Branch';
-                        } else if (typeUpper === 'WITHDRAWAL') {
-                          flowDesc = 'Counter Cash Withdrawal';
-                        } else if (typeUpper === 'TRANSFER') {
-                          if (isCredit) {
-                            flowDesc = `Transfer from ${tx.sourceAccountNumber || 'account'}`;
-                          } else {
-                            flowDesc = `Transfer to ${tx.destinationAccountNumber || 'recipient'}`;
-                          }
-                        }
-
-                        return (
-                          <tr key={tx.transaction_id || tx.transactionId || tx.transactionRef}>
-                            <td style={{ whiteSpace: 'nowrap', color: '#94a3b8' }}>
-                              {new Date(tx.created_at || tx.createdAt || tx.timestamp).toLocaleString('en-IN', {
-                                dateStyle: 'short',
-                                timeStyle: 'short'
-                              })}
-                            </td>
-                            <td style={{ fontFamily: 'var(--font-mono)', color: '#60a5fa' }}>
-                              {tx.transaction_ref || tx.transactionRef || tx.transactionReference}
-                            </td>
-                            <td>
-                              <span
-                                style={{
-                                  display: 'inline-block',
-                                  padding: '0.15rem 0.45rem',
-                                  borderRadius: '4px',
-                                  fontSize: '0.7rem',
-                                  fontWeight: 700,
-                                  background: typeUpper === 'DEPOSIT'
-                                    ? 'rgba(16, 185, 129, 0.15)'
-                                    : typeUpper === 'WITHDRAWAL'
-                                    ? 'rgba(56, 189, 248, 0.15)'
-                                    : 'rgba(168, 85, 247, 0.15)',
-                                  color: typeUpper === 'DEPOSIT' ? '#34d399' : typeUpper === 'WITHDRAWAL' ? '#38bdf8' : '#c084fc',
-                                  border: `1px solid ${typeUpper === 'DEPOSIT' ? 'rgba(16, 185, 129, 0.3)' : typeUpper === 'WITHDRAWAL' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(168, 85, 247, 0.3)'}`
-                                }}
-                              >
-                                {typeUpper}
-                              </span>
-                            </td>
-                            <td style={{ color: '#e2e8f0', fontWeight: 500 }}>
-                              {flowDesc}
-                            </td>
-                            <td style={{ color: '#94a3b8', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {tx.remarks || '—'}
-                            </td>
-                            <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: isCredit ? '#34d399' : '#f87171' }}>
-                              {isCredit ? '+ ' : '- '}
-                              {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(tx.amount))}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Statement Pagination Controls */}
-              {custStatementTotalPages > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                    Page {custStatementPage} of {custStatementTotalPages} ({custStatementTotal} total)
-                  </span>
-                  <div style={{ display: 'flex', gap: '0.4rem' }}>
-                    <button
-                      type="button"
-                      className="btn-secondary-custom"
-                      disabled={custStatementPage <= 1 || custStatementLoading}
-                      onClick={() => loadCustomerStatement(customerStatementModal, custStatementPage - 1, custStatementType)}
-                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
-                    >
-                      &larr; Prev
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary-custom"
-                      disabled={custStatementPage >= custStatementTotalPages || custStatementLoading}
-                      onClick={() => loadCustomerStatement(customerStatementModal, custStatementPage + 1, custStatementType)}
-                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
-                    >
-                      Next &rarr;
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="modal-actions-row">
-              <button
-                type="button"
-                className="btn-secondary-custom"
-                onClick={() => setCustomerStatementModal(null)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
+      {/* Customer Account Statement Modal (Feature 4 / Feature 3 Authoritative Modal) */}
+      {customerStatementModal && (
+        <AccountStatementModal
+          accountId={customerStatementModal.accountId || customerStatementModal.account_id}
+          accountData={customerStatementModal}
+          onClose={() => setCustomerStatementModal(null)}
+        />
       )}
     </div>
   );

@@ -402,3 +402,283 @@
   font-weight: 800;
 }
 
+
+/* ==============================================================================
+   Feature 3: Beneficiary Verification & Confirmation Styles
+   ============================================================================== */
+
+/* Beneficiary Input Row with Inline Verification Button */
+.beneficiary-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.beneficiary-input-row .transfer-text-input {
+  flex: 1;
+}
+
+.btn-verify-beneficiary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  padding: 0.65rem 0.95rem;
+  border-radius: 6px;
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  height: 40px;
+}
+
+.btn-verify-beneficiary:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.btn-verify-beneficiary.verified {
+  background: rgba(52, 211, 153, 0.15);
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #34d399;
+}
+
+.btn-verify-beneficiary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Beneficiary Error Alert */
+.beneficiary-error-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  padding: 0.45rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+  animation: transferFadeIn 0.15s ease-out;
+}
+
+/* Verified Beneficiary Confirmation Card (Section 3) */
+.beneficiary-verified-card {
+  background: rgba(52, 211, 153, 0.05);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+  animation: transferFadeIn 0.2s ease-out;
+}
+
+.verified-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.verified-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #34d399;
+}
+
+.verified-icon {
+  color: #34d399;
+}
+
+.verified-status-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.verified-card-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 0.8fr;
+  gap: 0.6rem;
+}
+
+.verified-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.verified-item .v-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.verified-item .v-val {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.verified-item .v-val.highlight {
+  color: #38bdf8;
+}
+
+/* Transfer Confirmation Review (Section 5) */
+.transfer-confirm-banner {
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.transfer-confirm-banner .shield-icon {
+  color: #38bdf8;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.transfer-confirm-banner strong {
+  display: block;
+  font-size: 0.875rem;
+  color: #f8fafc;
+  margin-bottom: 0.15rem;
+}
+
+.transfer-confirm-banner p {
+  margin: 0;
+  font-size: 0.775rem;
+  color: #94a3b8;
+}
+
+.transfer-summary-block {
+  background: #070b14;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.95rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.transfer-summary-block.beneficiary-block {
+  border-color: rgba(52, 211, 153, 0.25);
+  background: rgba(52, 211, 153, 0.02);
+}
+
+.transfer-summary-block.txn-block {
+  border-color: rgba(56, 189, 248, 0.25);
+  background: rgba(56, 189, 248, 0.03);
+}
+
+.summary-block-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.summary-block-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.badge-verified-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(52, 211, 153, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  padding: 0.12rem 0.45rem;
+  border-radius: 9999px;
+}
+
+.summary-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.65rem 1rem;
+}
+
+.summary-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.summary-field.full-width {
+  grid-column: 1 / -1;
+}
+
+.summary-label {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.summary-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.summary-value.highlight-green {
+  color: #34d399;
+}
+
+.summary-value.highlight-cyan {
+  color: #38bdf8;
+}
+
+.summary-value.italic {
+  font-style: italic;
+  color: #94a3b8;
+}
+
+/* Receipt Action Button on Success Screen */
+.btn-receipt-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  padding: 0.55rem 0.95rem;
+  border-radius: 6px;
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-receipt-action:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.btn-receipt-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -777,7 +777,7 @@ a test needs is created in its own preconditions. **Actual Result** and **Status
 | TC-16 | View Own Account Details and Transaction History | Functional, Security | High | **Passed** | Verified 2026-10-28 via `tests/accounts.test.js` Scenarios 2 & 3 and `tests/transactions.test.js` Scenario 9. Employees view all accounts, customers strictly isolated to their own accounts (403 `AUTH_002` on cross-access). |
 | TC-17 | Change Password | Functional, Security | Medium | **Pending Implementation** | Password change endpoint and UI scheduled for Sprint 2. Bcrypt hashing verified under TC-09. |
 | TC-18 | Create and Deactivate Employee Account | Functional, Security | Medium | **Passed** | Verified 2026-10-28 via `tests/auth.test.js` and employee management dashboard. Admin management UI and session revocation active. |
-| TC-19 | View Transaction Records and Generate Report | Functional | Medium | **Pending Implementation** | Reporting and admin records view scheduled for Sprint 2. |
+| TC-19 | View Transaction Records and Generate Report | Functional | Medium | **Passed** | Verified 2026-10-29 via `tests/reports.test.js` (Scenarios 1–7) & `tests/history.test.js` (Scenario 15) and React UI (`AdminReports`). Overview, customer, account, and transaction reports verified with transfer single-counting and RBAC clearance. |
 | TC-20 | View and Update Customer Information | Functional | Medium | **Passed** | Verified 2026-10-29 via `tests/customers.test.js` Scenarios 11–20 & React UI. Directory search, ID lookup, role-based field restrictions (A-06) enforced. |
 | TC-21 | Role-Specific Navigation | Usability | Medium | **Passed** | Role-based navigation for Admin and Employee active in sidebar navigation and role badges. |
 
@@ -826,7 +826,7 @@ Verification types: **T** = Test execution, **I** = Inspection or review,
 | FR-22 | Change password | TC-17 | T | **Pending Implementation** (Scheduled for Sprint 2; bcrypt storage verified via TC-09) |
 | FR-23 | Create and manage employee accounts | TC-18 | T | **Pending Implementation** (Scheduled for Sprint 2) |
 | FR-24 | Deactivate employee accounts | TC-18 | T | **Passed (Auth Enforcement)** / Pending Implementation (Admin CRUD UI pending Sprint 2) |
-| FR-25 | Basic reports | TC-19 | T, A | **Pending Implementation** (Scheduled for Sprint 2) |
+| FR-25 | Basic reports | TC-19 | T, A | **Passed** (Verified 2026-10-29 via `tests/reports.test.js` Scenarios 1–7 & React UI `AdminReports`) |
 
 ### 9.2 Non-Functional Requirements
 

@@ -8,13 +8,28 @@ import {
   getCustomers,
   depositFunds,
   withdrawFunds,
-  getAccountTransactions
+  getAccountTransactions,
+  getTransactionReceipt
 } from '../services/api';
+import TransactionReceiptModal from './TransactionReceiptModal';
+import AccountStatementModal from './AccountStatementModal';
 import './AccountManagement.css';
 
 /* ==============================================================================
    Lucide-style Inline SVG Icons (Project-compatible, zero-dependency)
    ============================================================================== */
+
+function IconFileText({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+  );
+}
 
 function IconLandmark({ size = 18, className = '' }) {
   return (
@@ -221,7 +236,30 @@ export default function AccountManagement({ currentUser, initialAction = null, o
   // Transaction Modals (Issue #8)
   const [depositDialog, setDepositDialog] = useState(null);
   const [withdrawDialog, setWithdrawDialog] = useState(null);
+  const [txnReceipt, setTxnReceipt] = useState(null);
   const [accountTransactions, setAccountTransactions] = useState([]);
+  const [activeReceipt, setActiveReceipt] = useState(null);
+  const [statementAccount, setStatementAccount] = useState(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+
+  const handleOpenReceiptFromRef = async (refOrId) => {
+    if (!refOrId) return;
+    setReceiptLoading(true);
+    try {
+      const data = await getTransactionReceipt(refOrId);
+      setActiveReceipt(data);
+    } catch (err) {
+      console.error("Failed to load transaction receipt:", err);
+      setToast({
+        type: "error",
+        message: err.message || "Unable to fetch authoritative transaction receipt."
+      });
+    } finally {
+      if (isMountedRef.current) {
+        setReceiptLoading(false);
+      }
+    }
+  };
 
   // References
   const isMountedRef = useRef(true);
@@ -453,11 +491,26 @@ export default function AccountManagement({ currentUser, initialAction = null, o
     setDepositDialog((prev) => ({ ...prev, isSubmitting: true, error: null }));
     try {
       const res = await depositFunds(depositDialog.account.accountId, amtStr, depositDialog.remarks);
+      const targetAcc = depositDialog.account;
+      const updatedBal = res.newBalance || res.new_balance || (Number(targetAcc.balance) + Number(amtStr));
+      const txnRef = res.transactionReference || res.transaction_reference || res.transactionRef || 'COMPLETED';
       setToast({
         type: 'success',
-        message: `Deposit of ${formatINR(amtStr)} completed! Ref: ${res.transactionReference || res.transaction_reference || 'COMPLETED'}. New balance: ${formatINR(res.newBalance || res.new_balance)}`
+        message: `Deposit of ${formatINR(amtStr)} completed! Ref: ${txnRef}. New balance: ${formatINR(updatedBal)}`
       });
       setDepositDialog(null);
+      setTxnReceipt({
+        transactionRef: txnRef,
+        type: 'DEPOSIT',
+        accountNumber: targetAcc.accountNumber,
+        customerName: targetAcc.customerName,
+        accountType: targetAcc.accountType,
+        previousBalance: targetAcc.balance,
+        amount: Number(amtStr),
+        updatedBalance: updatedBal,
+        timestamp: new Date().toISOString(),
+        remarks: depositDialog.remarks || null
+      });
       await fetchAccounts(true);
       if (viewingAccount?.accountId === depositDialog.account.accountId) {
         handleOpenDetails(depositDialog.account.accountId);
@@ -500,11 +553,26 @@ export default function AccountManagement({ currentUser, initialAction = null, o
     setWithdrawDialog((prev) => ({ ...prev, isSubmitting: true, error: null }));
     try {
       const res = await withdrawFunds(withdrawDialog.account.accountId, amtStr, withdrawDialog.remarks);
+      const targetAcc = withdrawDialog.account;
+      const updatedBal = res.newBalance || res.new_balance || (Number(targetAcc.balance) - Number(amtStr));
+      const txnRef = res.transactionReference || res.transaction_reference || res.transactionRef || 'COMPLETED';
       setToast({
         type: 'success',
-        message: `Withdrawal of ${formatINR(amtStr)} completed! Ref: ${res.transactionReference || res.transaction_reference || 'COMPLETED'}. Remaining balance: ${formatINR(res.newBalance || res.new_balance)}`
+        message: `Withdrawal of ${formatINR(amtStr)} completed! Ref: ${txnRef}. Remaining balance: ${formatINR(updatedBal)}`
       });
       setWithdrawDialog(null);
+      setTxnReceipt({
+        transactionRef: txnRef,
+        type: 'WITHDRAWAL',
+        accountNumber: targetAcc.accountNumber,
+        customerName: targetAcc.customerName,
+        accountType: targetAcc.accountType,
+        previousBalance: targetAcc.balance,
+        amount: Number(amtStr),
+        updatedBalance: updatedBal,
+        timestamp: new Date().toISOString(),
+        remarks: withdrawDialog.remarks || null
+      });
       await fetchAccounts(true);
       if (viewingAccount?.accountId === withdrawDialog.account.accountId) {
         handleOpenDetails(withdrawDialog.account.accountId);
@@ -673,26 +741,6 @@ export default function AccountManagement({ currentUser, initialAction = null, o
           </button>
           {isEmployee && (
             <>
-              <button
-                id="quick-deposit-btn"
-                type="button"
-                className="btn-action-deposit header-btn-deposit"
-                onClick={() => handleOpenDeposit()}
-                title="Quick cash deposit into an active account (FR-12)"
-              >
-                <IconArrowDownCircle size={15} />
-                <span>Deposit Cash</span>
-              </button>
-              <button
-                id="quick-withdraw-btn"
-                type="button"
-                className="btn-action-withdraw header-btn-withdraw"
-                onClick={() => handleOpenWithdraw()}
-                title="Quick cash withdrawal from an active account (FR-13)"
-              >
-                <IconArrowUpCircle size={15} />
-                <span>Withdraw Cash</span>
-              </button>
               <button
                 id="create-account-btn"
                 type="button"
@@ -1035,7 +1083,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                                   })}
                                   title="Reactivate account"
                                 >
-                                  Activate
+                                  Reactivate
                                 </button>
                               )}
                             </div>
@@ -1341,6 +1389,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                             <th>Amount</th>
                             <th>Date &amp; Time</th>
                             <th>Remarks</th>
+                            <th style={{ textAlign: 'right' }}>Receipt</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1373,6 +1422,19 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                                 <span className="remarks-text" style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                                   {tx.remarks || '—'}
                                 </span>
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                <button
+                                  type="button"
+                                  className="btn-action btn-edit"
+                                  onClick={() => handleOpenReceiptFromRef(tx.transactionRef || tx.transactionId)}
+                                  disabled={receiptLoading}
+                                  title="View authoritative transaction receipt"
+                                  style={{ padding: '0.2rem 0.45rem', fontSize: '0.72rem' }}
+                                >
+                                  <IconFileText size={12} />
+                                  <span>Receipt</span>
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1430,7 +1492,16 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                   </div>
                 )}
 
-                <div className="modal-actions-row">
+                <div className="modal-actions-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn-primary-custom"
+                    onClick={() => setStatementAccount(viewingAccount)}
+                    title="Generate and view official statement with running balances"
+                  >
+                    <IconFileText size={15} />
+                    <span>Generate Statement</span>
+                  </button>
                   <button
                     type="button"
                     className="btn-secondary-custom"
@@ -1982,6 +2053,131 @@ export default function AccountManagement({ currentUser, initialAction = null, o
           </div>
         </div>,
         document.body
+      )}
+      {/* ========================================================================
+          TRANSACTION RECEIPT MODAL (FEATURE 1)
+          ======================================================================== */}
+      {txnReceipt && createPortal(
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="receipt-dialog-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setTxnReceipt(null);
+          }}
+        >
+          <div className="modal-card receipt-modal-card" style={{ maxWidth: '520px' }}>
+            <div className="modal-header" style={{ borderBottom: '1px solid rgba(16, 185, 129, 0.25)' }}>
+              <div className="modal-title-box">
+                <IconCheckCircle size={22} className="text-success" />
+                <h3 id="receipt-dialog-title">Transaction Receipt</h3>
+              </div>
+              <button
+                type="button"
+                className="modal-close-icon-btn"
+                onClick={() => setTxnReceipt(null)}
+                aria-label="Close receipt"
+              >
+                <IconX size={18} />
+              </button>
+            </div>
+
+            <div className="txn-receipt-body" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className="receipt-success-badge" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'rgba(16, 185, 129, 0.1)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.25)', color: '#34d399' }}>
+                <IconCheckCircle size={20} />
+                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                  {txnReceipt.type === 'DEPOSIT' ? 'Cash Deposit Successful' : 'Cash Withdrawal Successful'}
+                </span>
+              </div>
+
+              <div className="receipt-details-table" style={{ background: '#090e1a', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#64748b' }}>Transaction Ref</span>
+                  <strong className="font-mono" style={{ color: '#60a5fa' }}>{txnReceipt.transactionRef}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#64748b' }}>Account Number</span>
+                  <strong className="font-mono" style={{ color: '#f8fafc' }}>{txnReceipt.accountNumber}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#64748b' }}>Customer Name</span>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>{txnReceipt.customerName}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#64748b' }}>Account Type</span>
+                  <span style={{ color: '#cbd5e1' }}>{txnReceipt.accountType}</span>
+                </div>
+                <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '0.2rem 0' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#64748b' }}>Previous Balance</span>
+                  <span className="font-mono" style={{ color: '#cbd5e1' }}>{formatINR(txnReceipt.previousBalance)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>Transaction Amount</span>
+                  <strong className="font-mono text-success" style={{ fontSize: '1rem' }}>
+                    {txnReceipt.type === 'DEPOSIT' ? '+ ' : '- '}{formatINR(txnReceipt.amount)}
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                  <span style={{ color: '#f8fafc', fontWeight: 600 }}>Updated Balance</span>
+                  <strong className="font-mono text-primary" style={{ fontSize: '1rem' }}>{formatINR(txnReceipt.updatedBalance)}</strong>
+                </div>
+                {txnReceipt.remarks && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                    <span style={{ color: '#64748b' }}>Remarks</span>
+                    <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>{txnReceipt.remarks}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                  <span>Timestamp</span>
+                  <span>{new Date(txnReceipt.timestamp).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', padding: '1rem 1.5rem' }}>
+              <button
+                type="button"
+                className="btn-primary-custom"
+                onClick={() => {
+                  const ref = txnReceipt.transactionRef;
+                  setTxnReceipt(null);
+                  handleOpenReceiptFromRef(ref);
+                }}
+                disabled={receiptLoading}
+                title="View and print official counter transaction receipt"
+              >
+                <IconFileText size={15} />
+                <span>{receiptLoading ? 'Loading Receipt...' : 'View Receipt'}</span>
+              </button>
+              <button
+                type="button"
+                className="btn-secondary-custom"
+                onClick={() => setTxnReceipt(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {/* Official Transaction Receipt Proof Modal (Feature 2) */}
+      {activeReceipt && (
+        <TransactionReceiptModal
+          receipt={activeReceipt}
+          onClose={() => setActiveReceipt(null)}
+        />
+      )}
+
+      {/* Customer Bank Account Statement Modal (Feature 3) */}
+      {statementAccount && (
+        <AccountStatementModal
+          accountId={statementAccount.accountId}
+          accountData={statementAccount}
+          onClose={() => setStatementAccount(null)}
+        />
       )}
     </div>
   );

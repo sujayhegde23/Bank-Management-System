@@ -50,14 +50,41 @@ async function requireAuth(req, res, next) {
       });
     }
 
+    // Resolve domain-specific profile identity live from MySQL using foreign keys
+    let customerId = null;
+    let employeeId = null;
+    let displayName = req.session.user.displayName || rows[0].username;
+
+    if (rows[0].role === 'CUSTOMER') {
+      const custRows = await query(
+        'SELECT customer_id, full_name FROM customers WHERE user_id = ? LIMIT 1',
+        [rows[0].user_id]
+      );
+      if (custRows && custRows.length > 0) {
+        customerId = Number(custRows[0].customer_id);
+        displayName = custRows[0].full_name;
+      }
+    } else if (rows[0].role === 'EMPLOYEE') {
+      const empRows = await query(
+        'SELECT employee_id, full_name FROM employees WHERE user_id = ? LIMIT 1',
+        [rows[0].user_id]
+      );
+      if (empRows && empRows.length > 0) {
+        employeeId = Number(empRows[0].employee_id);
+        displayName = empRows[0].full_name;
+      }
+    } else if (rows[0].role === 'ADMIN') {
+      displayName = 'Administrator';
+    }
+
     // Attach fresh verified user context from database
     req.user = {
       userId: rows[0].user_id,
       username: rows[0].username,
       role: rows[0].role,
-      displayName: req.session.user.displayName,
-      customerId: req.session.user.customerId,
-      employeeId: req.session.user.employeeId
+      displayName,
+      customerId,
+      employeeId
     };
 
     next();

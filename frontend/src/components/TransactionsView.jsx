@@ -1,9 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getRecentTransactions } from '../services/api';
+import { getRecentTransactions, getTransactionReceipt } from '../services/api';
+import TransactionReceiptModal from './TransactionReceiptModal';
 
 /**
  * Icons (Inline SVG for zero external icon dependency issues)
  */
+function IconFileText({ size = 16, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+  );
+}
+
 function IconCreditCard({ size = 18, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -98,6 +111,22 @@ export default function TransactionsView() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [activeReceipt, setActiveReceipt] = useState(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+
+  const handleViewReceipt = async (refOrId) => {
+    if (!refOrId) return;
+    setReceiptLoading(true);
+    try {
+      const data = await getTransactionReceipt(refOrId);
+      setActiveReceipt(data);
+    } catch (err) {
+      console.error('Failed to load transaction receipt:', err);
+      setError(err.message || 'Unable to load authoritative transaction receipt.');
+    } finally {
+      setReceiptLoading(false);
+    }
+  };
 
   // Pagination & Filtering state
   const [page, setPage] = useState(1);
@@ -200,7 +229,7 @@ export default function TransactionsView() {
                 Bank Transaction Ledger
               </h2>
               <p style={{ fontSize: '0.825rem', color: '#94a3b8', margin: '0.2rem 0 0 0' }}>
-                Immutable audit trail of counter cash deposits, withdrawals, and customer transfers across accounts (FR-21, NFR-10).
+                Complete record of deposits, withdrawals, and fund transfers processed across bank accounts.
               </p>
             </div>
           </div>
@@ -414,7 +443,8 @@ export default function TransactionsView() {
                   <th>Destination Account</th>
                   <th>Performed By</th>
                   <th>Audit Remarks</th>
-                  <th style={{ textAlign: 'right', paddingRight: '1rem' }}>Amount</th>
+                  <th style={{ textAlign: 'right', paddingRight: '0.75rem' }}>Amount</th>
+                  <th style={{ textAlign: 'center', width: '90px' }}>Receipt</th>
                 </tr>
               </thead>
               <tbody>
@@ -484,8 +514,33 @@ export default function TransactionsView() {
                       <td style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#94a3b8' }}>
                         {tx.remarks || '—'}
                       </td>
-                      <td style={{ textAlign: 'right', paddingRight: '1rem', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9rem', color: '#f8fafc' }}>
+                      <td style={{ textAlign: 'right', paddingRight: '0.75rem', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.9rem', color: '#f8fafc' }}>
                         {formatINR(tx.amount)}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleViewReceipt(tx.transactionRef || tx.transactionId)}
+                          disabled={receiptLoading}
+                          title="View official printable transaction receipt"
+                          style={{
+                            background: 'rgba(59, 130, 246, 0.12)',
+                            border: '1px solid rgba(59, 130, 246, 0.25)',
+                            color: '#93c5fd',
+                            padding: '0.22rem 0.5rem',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <IconFileText size={12} />
+                          <span>Receipt</span>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -550,6 +605,13 @@ export default function TransactionsView() {
           </div>
         </div>
       </div>
+      {/* Official Transaction Receipt Proof Modal (Feature 2) */}
+      {activeReceipt && (
+        <TransactionReceiptModal
+          receipt={activeReceipt}
+          onClose={() => setActiveReceipt(null)}
+        />
+      )}
     </div>
   );
 }

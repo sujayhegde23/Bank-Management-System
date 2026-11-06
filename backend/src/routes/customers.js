@@ -24,6 +24,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { query, withTransaction } = require('../config/db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { recordAuditEvent } = require('../services/auditService');
 
 // Strict input validation regex constants
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -156,6 +157,106 @@ router.get('/', requireAuth, requireRole('EMPLOYEE', 'ADMIN'), async (req, res, 
 });
 
 /**
+ * GET /api/customers/profile
+ * GET /api/customers/me
+ * Retrieve authenticated customer's own profile (Feature 5).
+ * Identity derived strictly from authenticated session (req.user.customerId).
+ */
+async function handleGetMyProfile(req, res, next) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        errorCode: 'AUTH_003',
+        message: 'Authentication required'
+      });
+    }
+
+    const customerId = req.user.customerId;
+    if (!customerId) {
+      return res.status(403).json({
+        success: false,
+        errorCode: 'AUTH_002',
+        message: 'Active user does not have a linked customer profile'
+      });
+    }
+
+    const rows = await query(
+      `SELECT c.customer_id,
+              c.user_id,
+              c.full_name,
+              c.date_of_birth,
+              c.phone,
+              c.email,
+              c.address,
+              c.created_at,
+              c.updated_at,
+              u.username,
+              u.status AS user_status
+       FROM customers c
+       JOIN users u ON c.user_id = u.user_id
+       WHERE c.customer_id = ?
+       LIMIT 1`,
+      [customerId]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        errorCode: 'CUST_001',
+        message: 'Customer profile not found'
+      });
+    }
+
+    const r = rows[0];
+    return res.status(200).json({
+      success: true,
+      data: {
+        customerId: r.customer_id,
+        userId: r.user_id,
+        username: r.username,
+        fullName: r.full_name,
+        dateOfBirth: formatDateOnly(r.date_of_birth),
+        phone: r.phone,
+        email: r.email,
+        address: r.address,
+        userStatus: r.user_status,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * PUT /api/customers/profile
+ * PUT /api/customers/me
+ * Update authenticated customer's own profile (Feature 5).
+ * Identity derived strictly from authenticated session (req.user.customerId).
+ */
+async function handleUpdateMyProfile(req, res, next) {
+  if (!req.user || !req.user.customerId) {
+    return res.status(403).json({
+      success: false,
+      errorCode: 'AUTH_002',
+      message: 'Active user does not have a linked customer profile'
+    });
+  }
+  // Enforce session-derived customer ID regardless of client input
+  req.params.customerId = String(req.user.customerId);
+  return handleUpdateCustomer(req, res, next);
+}
+
+router.get('/profile', requireAuth, handleGetMyProfile);
+router.get('/me', requireAuth, handleGetMyProfile);
+router.put('/profile', requireAuth, requireRole('CUSTOMER'), handleUpdateMyProfile);
+router.put('/me', requireAuth, requireRole('CUSTOMER'), handleUpdateMyProfile);
+router.patch('/profile', requireAuth, requireRole('CUSTOMER'), handleUpdateMyProfile);
+router.patch('/me', requireAuth, requireRole('CUSTOMER'), handleUpdateMyProfile);
+
+/**
  * GET /api/customers/:customerId
  * View details of a specific customer (FR-05).
  * Access: Employee, Admin, or the Customer requesting their own profile (NFR-03).
@@ -176,7 +277,7 @@ router.get('/:customerId', requireAuth, async (req, res, next) => {
     }
 
     // Role check: Customer can only access their own profile (FR-05, NFR-03)
-    if (req.user.role === 'CUSTOMER' && req.user.customerId !== customerId) {
+    if (req.user.role === 'CUSTOMER' && (!req.user.customerId || Number(req.user.customerId) !== Number(customerId))) {
       return res.status(403).json({
         success: false,
         errorCode: 'AUTH_002',
@@ -413,6 +514,21 @@ router.post('/', requireAuth, requireRole('EMPLOYEE', 'ADMIN'), async (req, res,
       };
     });
 
+    await recordAuditEvent({
+      actorUserId: req.user.userId,
+      actionType: 'CUSTOMER_REGISTERED',
+      targetEntityType: 'CUSTOMER',
+      targetEntityId: createdProfile.customerId,
+      description: `Customer '${createdProfile.fullName}' (${createdProfile.username}) registered by ${req.user.role.toLowerCase()} '${req.user.username}'.`,
+      result: 'SUCCESS',
+      metadata: {
+        customerId: createdProfile.customerId,
+        userId: createdProfile.userId,
+        username: createdProfile.username,
+        email: createdProfile.email
+      }
+    });
+
     return res.status(201).json({
       success: true,
       message: 'Customer registered successfully',
@@ -492,7 +608,7 @@ async function handleUpdateCustomer(req, res, next) {
     const isStaff = req.user.role === 'EMPLOYEE' || req.user.role === 'ADMIN';
 
     // Horizontal access control: Customer can only update their own profile (NFR-03)
-    if (isCustomer && req.user.customerId !== customerId) {
+    if (isCustomer && (!req.user.customerId || Number(req.user.customerId) !== Number(customerId))) {
       return res.status(403).json({
         success: false,
         errorCode: 'AUTH_002',
@@ -504,9 +620,9 @@ async function handleUpdateCustomer(req, res, next) {
       });
     }
 
-    // Role-specific field restriction (SRS Assumption A-06 & FR-06):
-    // "permitted customer information" that a Customer may update is limited to contact details (address, phone number, email).
-    // Identity details (such as name and date of birth) may be changed only by a Bank Employee.
+    // Role-specific field restriction (SRS Assumption A-06 & FR-06, Feature 5):
+    // "permitted customer information" that a Customer may update is strictly limited to contact details (address, phone number, email).
+    // Identity details (such as name and date of birth) and security fields (username, role, status, balance, customerId) cannot be modified.
     if (isCustomer) {
       if (req.body.fullName !== undefined || req.body.dateOfBirth !== undefined) {
         return res.status(403).json({
@@ -518,6 +634,21 @@ async function handleUpdateCustomer(req, res, next) {
             message: 'Customers may only update contact details (address, phone, email). Identity details may only be changed by bank staff.'
           }
         });
+      }
+
+      const FORBIDDEN_CUSTOMER_FIELDS = ['customerId', 'userId', 'username', 'role', 'status', 'userStatus', 'balance', 'accountStatus', 'accountBalances'];
+      for (const field of FORBIDDEN_CUSTOMER_FIELDS) {
+        if (req.body[field] !== undefined) {
+          return res.status(403).json({
+            success: false,
+            errorCode: 'AUTH_002',
+            message: `Field '${field}' is restricted and cannot be modified by customer`,
+            error: {
+              code: 'AUTH_002',
+              message: `Field '${field}' is restricted and cannot be modified by customer`
+            }
+          });
+        }
       }
     }
 
@@ -681,6 +812,21 @@ async function handleUpdateCustomer(req, res, next) {
     );
 
     const r = updatedRows[0];
+
+    await recordAuditEvent({
+      actorUserId: req.user.userId,
+      actionType: 'CUSTOMER_UPDATED',
+      targetEntityType: 'CUSTOMER',
+      targetEntityId: customerId,
+      description: `Customer ID #${customerId} (${r.username}) profile updated by ${req.user.role.toLowerCase()} '${req.user.username}'.`,
+      result: 'SUCCESS',
+      metadata: {
+        customerId,
+        username: r.username,
+        updatedFields: Object.keys(fieldsToUpdate)
+      }
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Customer profile updated successfully',

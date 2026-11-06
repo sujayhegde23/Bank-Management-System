@@ -11,6 +11,7 @@ require('./config/env');
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
+const { sessionStore } = require('./config/sessionStore');
 const apiRouter = require('./routes');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -59,6 +60,7 @@ const sessionSecret = rawSecret || 'dev-session-secret-bms-academic-prototype';
 app.use(session({
   name: 'bms.sid',
   secret: sessionSecret,
+  store: sessionStore,
   resave: false,
   saveUninitialized: false,
   rolling: true, // Reset session expiration on every request (sliding inactivity timeout)

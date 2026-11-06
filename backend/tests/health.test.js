@@ -13,9 +13,11 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
 const { pool } = require('../src/config/db');
+const { closeMongo } = require('../src/config/mongo');
 
 describe('Backend API Scaffold Tests', () => {
   after(async () => {
+    await closeMongo().catch(() => {});
     await pool.end();
   });
   it('GET / should return 200 with welcome message', async () => {

@@ -14,6 +14,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { query } = require('../config/db');
 const { requireAuth } = require('../middleware/auth');
+const { recordAuditEvent } = require('../services/auditService');
 
 // Precomputed static dummy hash used to equalize response timing when username does not exist
 // Precalculated for "dummy-password-timing-mitigation" with 10 salt rounds
@@ -63,6 +64,15 @@ router.post('/login', async (req, res) => {
     // 2. Timing attack mitigation: compare with dummy hash if user does not exist
     if (!user) {
       await bcrypt.compare(password, DUMMY_HASH);
+      await recordAuditEvent({
+        actorUserId: null,
+        actionType: 'LOGIN_FAILED',
+        targetEntityType: 'USER',
+        targetEntityId: null,
+        description: `Failed login attempt for unknown username '${trimmedUsername}'.`,
+        result: 'FAILURE',
+        metadata: { attemptedUsername: trimmedUsername }
+      });
       return res.status(401).json({
         success: false,
         errorCode: 'AUTH_001',
@@ -77,6 +87,15 @@ router.post('/login', async (req, res) => {
     // 3. Verify password hash
     const isPasswordMatch = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordMatch) {
+      await recordAuditEvent({
+        actorUserId: user.user_id,
+        actionType: 'LOGIN_FAILED',
+        targetEntityType: 'USER',
+        targetEntityId: user.user_id,
+        description: `Failed login attempt for username '${user.username}' (invalid password).`,
+        result: 'FAILURE',
+        metadata: { attemptedUsername: trimmedUsername }
+      });
       return res.status(401).json({
         success: false,
         errorCode: 'AUTH_001',
@@ -90,6 +109,15 @@ router.post('/login', async (req, res) => {
 
     // 4. Verify account status (inactive users return generic AUTH_001 per FR-24 & Architecture §10.2)
     if (user.status !== 'ACTIVE') {
+      await recordAuditEvent({
+        actorUserId: user.user_id,
+        actionType: 'LOGIN_FAILED',
+        targetEntityType: 'USER',
+        targetEntityId: user.user_id,
+        description: `Failed login attempt for deactivated username '${user.username}'.`,
+        result: 'FAILURE',
+        metadata: { attemptedUsername: trimmedUsername, userStatus: user.status }
+      });
       return res.status(401).json({
         success: false,
         errorCode: 'AUTH_001',
@@ -130,7 +158,7 @@ router.post('/login', async (req, res) => {
     }
 
     // 6. Regenerate session to prevent session fixation and establish authenticated session
-    req.session.regenerate((err) => {
+    req.session.regenerate(async (err) => {
       if (err) {
         console.error('Session regeneration error on login:', err.message);
         return res.status(500).json({
@@ -148,10 +176,22 @@ router.post('/login', async (req, res) => {
         userId: user.user_id,
         username: user.username,
         role: user.role,
+        status: user.status,
+        createdAt: user.created_at,
         displayName: displayName,
         customerId: customerId,
         employeeId: employeeId
       };
+
+      await recordAuditEvent({
+        actorUserId: user.user_id,
+        actionType: 'USER_LOGIN',
+        targetEntityType: 'USER',
+        targetEntityId: user.user_id,
+        description: `User '${user.username}' logged in successfully as ${user.role}.`,
+        result: 'SUCCESS',
+        metadata: { role: user.role, username: user.username }
+      });
 
       return res.status(200).json({
         success: true,
@@ -195,7 +235,9 @@ router.post('/logout', (req, res) => {
     });
   }
 
-  req.session.destroy((err) => {
+  const loggedOutUser = req.session.user;
+
+  req.session.destroy(async (err) => {
     if (err) {
       console.error('Session destruction error on logout:', err.message);
       return res.status(500).json({
@@ -208,6 +250,16 @@ router.post('/logout', (req, res) => {
         }
       });
     }
+
+    await recordAuditEvent({
+      actorUserId: loggedOutUser.userId,
+      actionType: 'USER_LOGOUT',
+      targetEntityType: 'USER',
+      targetEntityId: loggedOutUser.userId,
+      description: `User '${loggedOutUser.username}' logged out.`,
+      result: 'SUCCESS',
+      metadata: { role: loggedOutUser.role, username: loggedOutUser.username }
+    });
 
     res.clearCookie('bms.sid');
     return res.status(200).json({
@@ -230,6 +282,8 @@ router.get('/me', requireAuth, (req, res) => {
       userId: req.user.userId,
       username: req.user.username,
       role: req.user.role,
+      status: req.user.status || 'ACTIVE',
+      createdAt: req.user.createdAt || undefined,
       displayName: req.user.displayName,
       customerId: req.user.customerId || undefined,
       employeeId: req.user.employeeId || undefined

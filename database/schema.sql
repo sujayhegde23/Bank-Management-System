@@ -147,3 +147,60 @@ CREATE TABLE IF NOT EXISTS bank_transactions (
     INDEX idx_txn_created_at (created_at),
     INDEX idx_txn_ref (transaction_ref)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- ------------------------------------------------------------------------------
+-- 6. Table: audit_logs
+-- Centralized activity and accountability audit trail (Feature 2).
+-- Distinct from financial bank_transactions ledger; records administrative,
+-- employee, customer lifecycle, status transitions, and banking operation outcomes.
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS audit_logs (
+    audit_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    actor_user_id BIGINT NULL,
+    action_type VARCHAR(64) NOT NULL,
+    target_entity_type VARCHAR(32) NULL,
+    target_entity_id VARCHAR(64) NULL,
+    description VARCHAR(500) NOT NULL,
+    result ENUM('SUCCESS', 'FAILURE') NOT NULL DEFAULT 'SUCCESS',
+    metadata JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_audit_actor FOREIGN KEY (actor_user_id)
+        REFERENCES users (user_id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    INDEX idx_audit_actor (actor_user_id, created_at),
+    INDEX idx_audit_action (action_type),
+    INDEX idx_audit_target (target_entity_type, target_entity_id),
+    INDEX idx_audit_created_at (created_at),
+    INDEX idx_audit_result (result)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 7. Table: fraud_outbox_events
+-- MySQL Transactional Outbox for Asynchronous Fraud Detection (Phase 3).
+-- Inserted within the exact same atomic database transaction as bank_transactions
+-- and accounts balance updates to guarantee at-least-once delivery without dual-write hazards.
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS fraud_outbox_events (
+    event_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    transaction_id BIGINT NOT NULL UNIQUE,
+    event_type VARCHAR(32) NOT NULL,
+    payload JSON NOT NULL,
+    status ENUM('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED') NOT NULL DEFAULT 'PENDING',
+    attempt_count INT NOT NULL DEFAULT 0,
+    next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    locked_at DATETIME NULL,
+    locked_by VARCHAR(128) NULL,
+    last_error VARCHAR(1000) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_outbox_transaction FOREIGN KEY (transaction_id)
+        REFERENCES bank_transactions (transaction_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    INDEX idx_outbox_poll (status, next_attempt_at),
+    INDEX idx_outbox_lease (status, locked_at),
+    INDEX idx_outbox_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

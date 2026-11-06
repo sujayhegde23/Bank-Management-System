@@ -48,7 +48,8 @@ The technology stack has been finalized for the Bank Management System:
 
 - **Frontend:** React with Vite (Single Page Application architecture, component-based user interface)
 - **Backend:** Node.js with Express (RESTful API, modular service layer, middleware-based authorization)
-- **Database:** MySQL (Relational database with InnoDB engine, ACID transactions, and decimal precision for currency)
+- **Primary Database:** MySQL (Relational database with InnoDB engine, ACID transactions, and decimal precision for currency)
+- **Fraud Detection Database:** MongoDB (Document database using official mongodb driver for risk assessments, fraud alerts, rules, and investigation telemetry; see [docs/fraud_detection_phase1.md](docs/fraud_detection_phase1.md))
 - **Communication:** REST API over HTTP with JSON payloads
 - **Development & Collaboration:** Visual Studio Code, Git and GitHub
 
