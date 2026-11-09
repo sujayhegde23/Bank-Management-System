@@ -261,7 +261,7 @@ export default function CustomerAccountOverview({
           </div>
           <h2 className="cust-header-title">Account Overview</h2>
           <p className="cust-header-subtitle">
-            Live account balances, status oversight, and retail banking operations (FR-09).
+            Live account balances, status oversight, and retail banking operations.
             {currentUser?.displayName && (
               <span className="cust-holder-tag">
                 Primary Holder: <strong>{currentUser.displayName}</strong>
@@ -295,7 +295,7 @@ export default function CustomerAccountOverview({
               title={
                 portfolioSummary.activeCount === 0
                   ? 'No active accounts available to initiate transfers'
-                  : 'Initiate fund transfer between accounts (FR-15)'
+                  : 'Initiate fund transfer between accounts'
               }
             >
               <IconSend size={14} />
@@ -646,7 +646,7 @@ export default function CustomerAccountOverview({
 
               // Transfer tooltip
               const transferTooltip = isActive
-                ? 'Transfer funds from this account (FR-15)'
+                ? 'Transfer funds from this account'
                 : isFrozen
                 ? 'Transfers are unavailable while this account is frozen. Please contact your branch.'
                 : 'Transfers are unavailable because this account is inactive or closed.';
@@ -742,7 +742,7 @@ export default function CustomerAccountOverview({
                       type="button"
                       className="btn-secondary-custom cust-btn-action"
                       onClick={() => onViewStatement && onViewStatement(acc)}
-                      title="View transaction history and generate account statement (Feature 3)"
+                      title="View transaction history and generate account statement"
                     >
                       <IconHistory size={14} />
                       <span>Statement</span>

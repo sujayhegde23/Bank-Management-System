@@ -399,7 +399,7 @@ export default function CustomerProfile({ currentUser, onNavigateToOverview }) {
               <div className="profile-policy-notice">
                 <IconLock size={16} className="policy-icon" />
                 <div className="policy-text">
-                  <strong>Branch Identity Verification Policy (Assumption A-06 &amp; FR-06):</strong> Legal identity details (Full Name and Date of Birth) are verified against government documentation during branch onboarding and cannot be altered online. To request a legal name or birthdate correction, please present government-issued photo identification at your local branch.
+                  <strong>Official KYC Verification Policy:</strong> Legal identity details (Full Name and Date of Birth) are verified against government documentation during onboarding and cannot be altered online. To request a legal name or birthdate correction, please present government-issued photo identification at your local branch.
                 </div>
               </div>
             </div>
@@ -541,7 +541,7 @@ export default function CustomerProfile({ currentUser, onNavigateToOverview }) {
                 <IconShield size={19} style={{ color: '#38bdf8' }} />
                 <h2>Banking Privacy &amp; Data Isolation Guarantees</h2>
               </div>
-              <span className="profile-badge-tag tag-verified">NFR-03 Compliant</span>
+              <span className="profile-badge-tag tag-verified">Encrypted &amp; Protected</span>
             </div>
 
             <div className="security-points-grid">
@@ -558,7 +558,7 @@ export default function CustomerProfile({ currentUser, onNavigateToOverview }) {
               <div className="security-point-box">
                 <IconLock size={18} className="security-point-icon" />
                 <div className="security-point-text">
-                  <h4>Customer Data Isolation (NFR-03)</h4>
+                  <h4>Multi-Tenant Data Privacy</h4>
                   <p>
                     Your bank accounts, ledger balances, and statement exports are strictly bound to Customer ID #{profile?.customerId}. No other customer or unauthorized party can access your financial records.
                   </p>

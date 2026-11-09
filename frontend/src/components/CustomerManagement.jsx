@@ -365,7 +365,7 @@ export default function CustomerManagement({ currentUser: _currentUser }) {
         <div>
           <h1 className="emp-page-title">Customer Directory &amp; Profile Management</h1>
           <p className="emp-page-subtitle">
-            Register new customers, view profile records, and maintain customer contact information (FR-04, FR-05, FR-06).
+            Register new customers, view profile records, and maintain customer contact information.
           </p>
         </div>
         <div className="header-actions-row">
@@ -544,7 +544,7 @@ export default function CustomerManagement({ currentUser: _currentUser }) {
                           type="button"
                           className="btn-table-action"
                           onClick={() => setViewingCustomer(cust)}
-                          title="View customer profile details (FR-05)"
+                          title="View customer profile details"
                         >
                           <IconEye size={13} />
                           <span>View</span>
@@ -553,7 +553,7 @@ export default function CustomerManagement({ currentUser: _currentUser }) {
                           type="button"
                           className="btn-table-action"
                           onClick={() => openEditModal(cust)}
-                          title="Update customer information (FR-06)"
+                          title="Update customer information"
                         >
                           <IconEdit size={13} />
                           <span>Edit</span>

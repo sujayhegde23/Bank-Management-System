@@ -1,120 +1,97 @@
-# Sequence Diagram — Fund Transfer
+# Sequence Diagram 1: Banking Transaction Processing (Fund Transfer)
 
-**Use case:** UC-04 (Transfer Funds)
+**Use case:** UC-04 (Transfer Funds)  
+**Requirements supported:** FR-11, FR-15, FR-16, FR-17, FR-18, FR-19, NFR-03, NFR-04, NFR-07, NFR-08, NFR-09, NFR-10, NFR-17, NFR-18  
+**Implemented API:** `POST /api/transfers` (or `POST /api/transactions/transfer`)  
 
-**Requirements supported:** FR-11, FR-15, FR-16, FR-17, FR-18, FR-19, NFR-03,
-NFR-04, NFR-07, NFR-08, NFR-09, NFR-17
-
-**Planned API:** `POST /api/transfers` (see
-[API Design](../architecture_design.md#9-api-design))
-
-This diagram describes the planned fund transfer flow. It assumes that the
-Authentication & Authorization Service has already confirmed a valid session and
-the `CUSTOMER` role before the request reaches the Transaction Service (see
-[login sequence](login_sequence.md) and
-[Security Architecture](../architecture_design.md#6-security-architecture)).
+This diagram depicts the synchronous banking transaction execution flow. The fund transfer updates both account balances, inserts an immutable ledger entry, and stages a transactional outbox event into MySQL within a single atomic database transaction. Downstream fraud evaluation is decoupled and asynchronous; it is not a synchronous prerequisite for banking transaction success.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor C as Customer
-    participant UI as Web User Interface
+    participant UI as Web User Interface (React)
+    participant API as Express API & RBAC
     participant TXN as Transaction Service
     participant ACC as Account Service
-    participant DAL as Data Access Layer
-    participant DB as Relational Database
+    participant DAL as MySQL Data Access Layer
+    participant DB as MySQL Database (InnoDB)
 
-    C->>UI: Select source account, enter receiver account number and amount
-    UI->>UI: Check required fields and amount > 0
-    UI->>TXN: Transfer request (sourceAccountId, receiverAccountNumber, amount)
+    C->>UI: Select source account, enter recipient account number and amount
+    UI->>UI: Client-side validation: amount > 0, required fields present
+    UI->>API: POST /api/transfers (sourceAccountId, destinationAccountNumber, amount)
+    
+    API->>API: requireAuth: Validate session cookie (bms.sid)
+    API->>API: requireRole('CUSTOMER'): Verify permitted role
+    API->>TXN: executeTransfer(user, sourceAccountId, destinationAccountNumber, amount)
 
-    TXN->>TXN: Validate input: amount > 0, max 2 decimal places,<br/>receiver different from sender (NFR-04)
-    alt Invalid input
-        TXN-->>UI: Failure: VAL_001 / TXN_002
-        UI-->>C: Show validation error (NFR-12)
-    else Input valid
-        TXN->>ACC: Check sender account (sourceAccountId, customerId)
-        ACC->>DAL: findAccountById(sourceAccountId)
-        DAL->>DB: SELECT sender account
-        DB-->>DAL: Sender account
-        DAL-->>ACC: Sender account
-        ACC-->>TXN: Owner and status of sender account
+    TXN->>TXN: Server-side validation: amount > 0, max 2 decimals, source != destination
+    
+    TXN->>ACC: Verify source account ownership (customerId)
+    ACC->>DAL: findAccountById(sourceAccountId)
+    DAL->>DB: SELECT * FROM accounts WHERE account_id = ?
+    DB-->>DAL: Source account record
+    DAL-->>ACC: Source account record
+    ACC-->>TXN: Account ownership and current status
 
-        TXN->>ACC: Check receiver account (receiverAccountNumber)
-        ACC->>DAL: findAccountByNumber(receiverAccountNumber)
-        DAL->>DB: SELECT receiver account
-        DB-->>DAL: Receiver account or no result
-        DAL-->>ACC: Receiver account or not found
-        ACC-->>TXN: Receiver status or not found
+    TXN->>ACC: Look up destination account by number
+    ACC->>DAL: findAccountByNumber(destinationAccountNumber)
+    DAL->>DB: SELECT * FROM accounts WHERE account_number = ?
+    DB-->>DAL: Destination account record (or NULL)
+    DAL-->>ACC: Destination account record
+    ACC-->>TXN: Destination account details
 
-        alt Sender account not owned by this customer (NFR-03)
-            TXN-->>UI: Failure: AUTH_002 "Unauthorized operation"
-            UI-->>C: Show error
-        else Invalid recipient (receiver account not found)
-            TXN-->>UI: Failure: ACC_002 "Account not found"
-            UI-->>C: Show error
-        else Sender or receiver frozen / inactive (FR-11)
-            TXN-->>UI: Failure: ACC_001 "Account frozen or inactive"
-            UI-->>C: Show error
-        else Both accounts valid and active
-            TXN->>DAL: Begin database transaction
-            DAL->>DB: BEGIN
-            DAL->>DB: SELECT both accounts FOR UPDATE<br/>(lock in ascending account ID order)
-            DB-->>DAL: Locked balances and current status
-            DAL-->>TXN: Sender balance, both statuses
+    TXN->>DAL: withTransaction(async conn => ...)
+    DAL->>DB: START TRANSACTION
 
-            alt Sender balance < amount (FR-16)
-                TXN->>DAL: Roll back
-                DAL->>DB: ROLLBACK
-                TXN-->>UI: Failure: TXN_001 "Insufficient balance"
-                UI-->>C: Show error, balances unchanged
-            else Status changed to frozen / inactive since the first check (FR-11)
-                TXN->>DAL: Roll back
-                DAL->>DB: ROLLBACK
-                TXN-->>UI: Failure: ACC_001 "Account frozen or inactive"
-                UI-->>C: Show error, balances unchanged
-            else Sufficient balance
-                TXN->>DAL: Debit sender by amount (FR-17)
-                DAL->>DB: UPDATE sender balance
-                TXN->>DAL: Credit receiver by amount (FR-17)
-                DAL->>DB: UPDATE receiver balance
-                TXN->>TXN: Generate unique transaction ID (FR-18)
-                TXN->>DAL: Create transaction record (FR-19)
-                DAL->>DB: INSERT transaction record
+    Note over TXN,DB: Lock accounts in ascending ID order to prevent deadlocks
+    DAL->>DB: SELECT * FROM accounts WHERE account_id IN (src, dst) FOR UPDATE
+    DB-->>DAL: Locked account rows with current balances and statuses
 
-                alt Any database step fails (NFR-09)
-                    DB-->>DAL: Error
-                    DAL->>DB: ROLLBACK
-                    DAL-->>TXN: Failure
-                    TXN->>TXN: Log failure without sensitive data
-                    TXN-->>UI: Failure: TXN_003 "Transaction failed"
-                    UI-->>C: Show error, no partial update
-                else All steps succeed
-                    DAL->>DB: COMMIT
-                    DB-->>DAL: Committed
-                    DAL-->>TXN: Success
-                    TXN-->>UI: Success: transaction ID, amount,<br/>new sender balance, timestamp
-                    UI-->>C: Show transfer confirmation
-                end
-            end
+    alt Either Account FROZEN or INACTIVE (FR-11)
+        TXN->>DAL: Rollback transaction
+        DAL->>DB: ROLLBACK
+        TXN-->>API: Reject with ACC_001 (Account frozen or inactive)
+        API-->>UI: 409 Conflict
+        UI-->>C: Display account restriction error
+    else Source Balance < Amount (FR-14, FR-16)
+        TXN->>DAL: Rollback transaction
+        DAL->>DB: ROLLBACK
+        TXN-->>API: Reject with TXN_001 (Insufficient balance)
+        API-->>UI: 422 Unprocessable Entity
+        UI-->>C: Display insufficient balance - balances unchanged
+    else Sufficient Balance and Both Accounts Active
+        TXN->>DAL: UPDATE accounts SET balance = balance - amount WHERE account_id = src
+        DAL->>DB: UPDATE source account balance (FR-17)
+        TXN->>DAL: UPDATE accounts SET balance = balance + amount WHERE account_id = dst
+        DAL->>DB: UPDATE destination account balance (FR-17)
+
+        TXN->>TXN: generateUniqueTransactionRef('TRANSFER') (FR-18)
+        TXN->>DAL: INSERT INTO bank_transactions (...)
+        DAL->>DB: INSERT immutable ledger record (FR-19)
+
+        Note over TXN,DB: Stage Outbox Event within the SAME MySQL transaction
+        TXN->>DAL: recordOutboxEvent(conn, { transactionId, eventType: 'TRANSFER', payload })
+        DAL->>DB: INSERT INTO fraud_outbox_events (transaction_id, event_type, payload, status: 'PENDING')
+        
+        alt Database Operation Failure (NFR-09)
+            DB-->>DAL: SQL error or constraint violation
+            DAL->>DB: ROLLBACK
+            TXN-->>API: Throw TXN_003 (Transaction failed)
+            API-->>UI: 500 Internal Server Error
+            UI-->>C: Display failure message - zero balance changes
+        else All Operations Succeed
+            DAL->>DB: COMMIT
+            DB-->>DAL: Transaction committed successfully
+            TXN-->>API: Return transaction details
+            API-->>UI: 201 Created
+            UI-->>C: Display transfer confirmation modal with new balance
         end
     end
 ```
 
-## Notes
-
-1. **Atomicity (NFR-09, NFR-17):** The debit, the credit and the transaction record
-   are written inside one database transaction. They are either all committed or
-   all rolled back, so a balance can never be left partially updated.
-2. **Balance check under lock (FR-16, NFR-08):** The final balance and status
-   checks happen after the account rows are locked. Two simultaneous transfers
-   from the same account therefore cannot both spend the same money.
-3. **Deadlock avoidance:** Both account rows are always locked in the same order
-   (ascending account ID), whichever account is sending.
-4. **Status checked twice (FR-11):** The early status check gives the customer a
-   quick error message. The second check, under lock, handles the case where an
-   employee freezes an account while a transfer is in progress.
-5. **Transaction record (FR-18, FR-19):** A transaction record is only created for
-   a completed transfer, and it is committed together with the balance changes.
-6. **Performance (NFR-07):** The whole flow is expected to complete within
-   5 seconds under the conditions defined in the SRS.
+## Architectural Highlights
+1. **Financial Source of Truth (NFR-08):** MySQL is the sole authoritative authority for account balances.
+2. **Atomicity and Consistency (NFR-09, NFR-17):** Balance debits, balance credits, immutable ledger entries, and outbox event records are committed together in one atomic MySQL transaction. If any step fails, `ROLLBACK` executes, leaving zero balance modifications and zero orphan outbox events.
+3. **Deadlock Prevention:** Account rows are locked in ascending `account_id` order regardless of transfer direction.
+4. **Decoupled Outbox Staging:** Staging the event in `fraud_outbox_events` avoids dual-write hazards and eliminates synchronous dependency on MongoDB availability, keeping transaction execution within design performance targets.

@@ -40,6 +40,10 @@ The Bank Employee can:
 - Deactivate accounts
 - Freeze or unfreeze accounts
 - View transaction records
+- View fraud alerts
+- Review transaction risk assessments
+- Manage fraud investigations
+- View fraud monitoring statistics
 
 ---
 
@@ -57,6 +61,11 @@ The Administrator can:
 - View transaction records
 - Activate or deactivate employee accounts
 - Generate basic reports
+- View fraud alerts
+- Review transaction risk assessments
+- Manage fraud investigations
+- Configure fraud rules
+- View fraud monitoring statistics
 
 ---
 
@@ -109,6 +118,18 @@ The Administrator can:
 
 ---
 
+### 2.4 Fraud Monitoring and Oversight Use Cases
+
+| Use Case ID | Use Case | Description | Permitted Actors |
+|---|---|---|---|
+| UC-27 | View Fraud Alerts | Staff views alerts generated for triggered rules or high-risk transactions | Bank Employee, Administrator |
+| UC-28 | Review Risk Assessments | Staff inspects calculated risk scores, risk levels, and contributing rules | Bank Employee, Administrator |
+| UC-29 | Manage Fraud Investigations | Staff creates and updates investigation status and operational case notes | Bank Employee, Administrator |
+| UC-30 | Configure Fraud Rules | Administrator tunes fraud rule weights, thresholds, and operational status | Administrator |
+| UC-31 | View Fraud Statistics | Staff views aggregated risk distributions, alert counts, and score averages | Bank Employee, Administrator |
+
+---
+
 ## 3. Use Case Relationships
 
 Some use cases depend on common system functionality.
@@ -134,6 +155,17 @@ Bank Employees can perform deposits and withdrawals and view authorized
 transaction records.
 
 Administrators can view transaction records for system monitoring.
+
+### Fraud Monitoring and Security Oversight
+
+Bank Employees and Administrators can view fraud alerts (UC-27), review transaction
+risk assessments (UC-28), manage investigation lifecycles (UC-29), and inspect
+fraud monitoring summary statistics (UC-31).
+
+Only Administrators can configure fraud rule weights and thresholds (UC-30).
+
+Customers are strictly prohibited from accessing all fraud monitoring use cases
+(UC-27 to UC-31) to prevent reverse-engineering of risk policies.
 
 ### Access Control
 

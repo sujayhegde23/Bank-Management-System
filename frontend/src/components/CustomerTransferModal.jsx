@@ -192,7 +192,7 @@ export default function CustomerTransferModal({
     }
 
     if (isSameAccount) {
-      setVerifyError('Source and destination accounts must be different (TXN_002).');
+      setVerifyError('Source and destination accounts must be different.');
       return;
     }
 
@@ -251,7 +251,7 @@ export default function CustomerTransferModal({
     }
 
     if (isSameAccount) {
-      setError('Source and destination accounts must be different (TXN_002).');
+      setError('Source and destination accounts must be different.');
       return;
     }
 
@@ -261,7 +261,7 @@ export default function CustomerTransferModal({
     }
 
     if (isOverdraft) {
-      setError(`Insufficient balance. Maximum available to transfer is ${formatINR(currentBalanceNum)} (TXN_001).`);
+      setError(`Insufficient balance. Maximum available to transfer is ${formatINR(currentBalanceNum)}.`);
       return;
     }
 
@@ -369,7 +369,7 @@ export default function CustomerTransferModal({
                     ? 'Review beneficiary and account details before ledger commit'
                     : step === 'SUCCESS'
                     ? 'Funds moved atomically with official ledger proof'
-                    : 'Move funds securely between bank accounts (FR-15, FR-17, Feature 3)'}
+                    : 'Move funds securely between registered bank accounts'}
                 </p>
               </div>
             </div>
@@ -705,7 +705,7 @@ export default function CustomerTransferModal({
 
                   {isSameAccount && (
                     <span style={{ fontSize: '0.75rem', color: '#f87171' }}>
-                      Destination cannot be the same as the source account (TXN_002).
+                      Destination cannot be the same as the source account.
                     </span>
                   )}
                 </div>

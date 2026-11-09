@@ -59,6 +59,11 @@ RIGHT_COLUMN = [
     ("View Customer Records", "UC-22", "admin", "A"),
     ("View Account Records", "UC-23", "admin", "A"),
     ("Generate Reports", "UC-26", "admin", "A"),
+    ("View Fraud Alerts", "UC-27", "employee_admin", "EA"),
+    ("Review Risk Assessments", "UC-28", "employee_admin", "EA"),
+    ("Manage Fraud Investigations", "UC-29", "employee_admin", "EA"),
+    ("Configure Fraud Rules", "UC-30", "admin", "A"),
+    ("View Fraud Statistics", "UC-31", "employee_admin", "EA"),
 ]
 
 # Actor positions: (x, y of the arms, colour, label).

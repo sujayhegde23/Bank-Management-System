@@ -866,7 +866,7 @@ export default function EmployeeManagement({ currentUser }) {
           <div className="stat-details">
             <span className="stat-label">Logged In Today</span>
             <span className="stat-value text-cyan">{stats.loggedInToday}</span>
-            <span className="stat-desc">Active today (FR-24)</span>
+            <span className="stat-desc">Active sessions today</span>
           </div>
         </div>
       </div>
