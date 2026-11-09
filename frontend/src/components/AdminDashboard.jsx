@@ -212,7 +212,7 @@ export default function AdminDashboard({ currentUser, onNavigate }) {
           <div className="dash-title-block">
             <div className="dash-badge">
               <IconShieldCheck size={14} />
-              <span>Administrator Portal &bull; System Monitoring &bull; Feature 1</span>
+              <span>Administrator Portal &bull; System Monitoring &bull; Executive Overview</span>
             </div>
             <h1 className="dash-title">Executive Banking Overview</h1>
             <p className="dash-subtitle">
@@ -542,7 +542,7 @@ export default function AdminDashboard({ currentUser, onNavigate }) {
               <div className="transfer-integrity-note">
                 <IconInfo size={15} />
                 <span>
-                  <strong>Accounting Integrity:</strong> Transfers are counted <em>exactly once</em> in total transactions and volume metrics (FR-25, AC-3).
+                  <strong>Accounting Integrity:</strong> Transfers are counted <em>exactly once</em> in total transactions and volume metrics.
                 </span>
               </div>
 

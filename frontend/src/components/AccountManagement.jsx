@@ -545,7 +545,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
     if (Number(amtStr) > currentBal) {
       setWithdrawDialog((prev) => ({
         ...prev,
-        error: `Insufficient balance. Maximum available for withdrawal is ${formatINR(currentBal)} (FR-14).`
+        error: `Insufficient balance. Maximum available for withdrawal is ${formatINR(currentBal)}.`
       }));
       return;
     }
@@ -691,7 +691,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
       <div className="account-mgmt-container">
         <div className="empty-state-box" style={{ padding: '3.5rem 1.5rem', textAlign: 'center' }}>
           <IconShieldAlert size={44} className="text-warning" style={{ marginBottom: '1rem' }} />
-          <h3 style={{ color: '#f8fafc', fontSize: '1.25rem', marginBottom: '0.5rem' }}>Access Restricted (FR-03)</h3>
+          <h3 style={{ color: '#f8fafc', fontSize: '1.25rem', marginBottom: '0.5rem' }}>Access Restricted</h3>
           <p style={{ color: '#94a3b8', maxWidth: '460px', margin: '0 auto', lineHeight: 1.5 }}>
             Branch Account Administration and Counter Cash Operations are strictly restricted to authorized bank employees. Customers cannot perform counter cash operations.
           </p>
@@ -789,7 +789,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
           <div className="stat-details">
             <span className="stat-label">Inactive Accounts</span>
             <span className="stat-value text-warning">{statistics.inactive}</span>
-            <span className="stat-desc">Transactions blocked (FR-11)</span>
+            <span className="stat-desc">Transactions blocked</span>
           </div>
         </div>
 
@@ -1016,7 +1016,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                                     type="button"
                                     className="btn-action-deposit"
                                     onClick={() => handleOpenDeposit(acc)}
-                                    title="Deposit cash into account (FR-12)"
+                                    title="Deposit cash into account"
                                   >
                                     <IconArrowDownCircle size={13} />
                                     <span>Deposit</span>
@@ -1025,7 +1025,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                                     type="button"
                                     className="btn-action-withdraw"
                                     onClick={() => handleOpenWithdraw(acc)}
-                                    title="Withdraw cash from account (FR-13)"
+                                    title="Withdraw cash from account"
                                   >
                                     <IconArrowUpCircle size={13} />
                                     <span>Withdraw</span>
@@ -1038,7 +1038,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                                       targetStatus: 'FROZEN',
                                       reason: ''
                                     })}
-                                    title="Freeze account to prevent transactions (FR-11)"
+                                    title="Freeze account to prevent transactions"
                                   >
                                     Freeze
                                   </button>
@@ -1153,7 +1153,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                   <span className="field-error-text">{createErrors.customerId}</span>
                 )}
                 <span className="field-hint">
-                  Only registered customer profiles can own bank accounts (FR-07).
+                  Only registered customer profiles can own bank accounts.
                 </span>
               </div>
 
@@ -1182,10 +1182,10 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                 <label className="form-label">Initial Opening Balance</label>
                 <div className="initial-balance-box">
                   <span className="initial-balance-value">₹0.00</span>
-                  <span className="initial-balance-tag">Enforced by Bank Policy (FR-07)</span>
+                  <span className="initial-balance-tag">Enforced by Bank Policy</span>
                 </div>
                 <span className="field-hint">
-                  Opening deposits must be performed through the subsequent Cash Deposit workflow (FR-12).
+                  Opening deposits must be performed through the subsequent Cash Deposit workflow.
                 </span>
               </div>
 
@@ -1340,7 +1340,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                           remarks: '',
                           error: null
                         })}
-                        title={viewingAccount.status === 'ACTIVE' ? 'Deposit funds into this account' : 'Deposits blocked for non-active account (FR-11)'}
+                        title={viewingAccount.status === 'ACTIVE' ? 'Deposit funds into this account' : 'Deposits blocked for non-active account'}
                       >
                         <IconArrowDownCircle size={14} />
                         <span>Deposit Cash</span>
@@ -1356,7 +1356,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                           remarks: '',
                           error: null
                         })}
-                        title={viewingAccount.status === 'ACTIVE' ? 'Withdraw funds from this account' : 'Withdrawals blocked for non-active account (FR-11)'}
+                        title={viewingAccount.status === 'ACTIVE' ? 'Withdraw funds from this account' : 'Withdrawals blocked for non-active account'}
                       >
                         <IconArrowUpCircle size={14} />
                         <span>Withdraw Cash</span>
@@ -1573,12 +1573,12 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                 <div className="policy-text">
                   {statusDialog.targetStatus === 'FROZEN' && (
                     <span>
-                      <strong>FR-11 Enforcement:</strong> Freezing this account will immediately block all cash deposits, withdrawals, and fund transfers. Account details and balances will remain visible.
+                      <strong>Policy Enforcement:</strong> Freezing this account will immediately block all cash deposits, withdrawals, and fund transfers. Account details and balances will remain visible.
                     </span>
                   )}
                   {statusDialog.targetStatus === 'INACTIVE' && (
                     <span>
-                      <strong>FR-11 Enforcement:</strong> Deactivating this account marks it dormant. No deposits, withdrawals, or transfers will be permitted until reactivated.
+                      <strong>Policy Enforcement:</strong> Deactivating this account marks it dormant. No deposits, withdrawals, or transfers will be permitted until reactivated.
                     </span>
                   )}
                   {statusDialog.targetStatus === 'ACTIVE' && (
@@ -1970,7 +1970,7 @@ export default function AccountManagement({ currentUser, initialAction = null, o
                   <div className="insufficient-funds-warning" role="alert">
                     <IconAlertCircle size={16} />
                     <span>
-                      <strong>Insufficient Funds:</strong> Requested amount of {formatINR(withdrawDialog.amount)} exceeds available balance of {formatINR(withdrawDialog.account.balance)}. Overdrafts are prohibited (FR-14).
+                      <strong>Insufficient Funds:</strong> Requested amount of {formatINR(withdrawDialog.amount)} exceeds available balance of {formatINR(withdrawDialog.account.balance)}. Overdrafts are prohibited.
                     </span>
                   </div>
                 )}

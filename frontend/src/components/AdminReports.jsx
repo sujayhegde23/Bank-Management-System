@@ -372,7 +372,7 @@ export default function AdminReports() {
           <div>
             <div className="reports-badge">
               <IconShieldCheck size={14} />
-              <span>Administrator Clearance &bull; SRS FR-25 &bull; TC-19</span>
+              <span>Administrator Clearance &bull; Authorized Financial Summaries</span>
             </div>
             <h1 className="reports-title">Executive Reports & Analytics</h1>
             <p className="reports-subtitle">
@@ -737,7 +737,7 @@ export default function AdminReports() {
               </h2>
               <div className="transfer-notice">
                 <IconInfo size={15} />
-                <span>Transfers are counted once in global totals (FR-25, AC-3).</span>
+                <span>Transfers are counted once in global totals.</span>
               </div>
               <table className="report-table">
                 <thead>

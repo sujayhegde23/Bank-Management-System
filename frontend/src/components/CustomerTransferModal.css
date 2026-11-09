@@ -206,11 +206,14 @@
 .transfer-quick-chips {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  padding-bottom: 0.15rem;
-  margin-top: 0.25rem;
+  gap: 0.4rem;
+  row-gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
+.transfer-quick-chips::-webkit-scrollbar {
+  display: none;
 }
 
 .transfer-chip-label {
@@ -220,14 +223,14 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   white-space: nowrap;
-  margin-right: 0.2rem;
+  margin-right: 0.15rem;
 }
 
 .transfer-chip-btn {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #cbd5e1;
-  padding: 0.28rem 0.6rem;
+  padding: 0.25rem 0.55rem;
   border-radius: 4px;
   font-size: 0.75rem;
   font-family: var(--font-mono);

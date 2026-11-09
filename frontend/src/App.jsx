@@ -190,12 +190,12 @@ function IconSend({ size = 18, className = '' }) {
 }
 
 
-function IconRefreshCw({ size = 18, className = '' }) {
+function IconMenu({ size = 18, className = '' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <polyline points="23 4 23 10 17 10" />
-      <polyline points="1 20 1 14 7 14" />
-      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="18" x2="21" y2="18" />
     </svg>
   );
 }
@@ -214,14 +214,14 @@ function IconHistory({ size = 18, className = '' }) {
 const SCHEMA_DEFINITIONS = {
   accounts: {
     title: 'accounts',
-    description: 'Core financial accounts owned by customers. Enforces non-negative balance and unique account numbers (FR-07, FR-08, FR-11).',
+    description: 'Core financial accounts owned by customers. Enforces non-negative balance and unique account numbers.',
     columns: [
       { name: 'account_id', type: 'BIGINT AUTO_INCREMENT', key: 'PK', desc: 'Internal surrogate identifier' },
       { name: 'account_number', type: 'VARCHAR(30)', key: 'UK', desc: 'Public alphanumeric account identifier (e.g. ACC-SB-XXXXXXXX)' },
       { name: 'customer_id', type: 'BIGINT', key: 'FK', desc: 'References customers(customer_id) ON DELETE RESTRICT' },
       { name: 'account_type', type: 'VARCHAR(20)', key: '', desc: 'Savings or Current account category' },
       { name: 'balance', type: 'DECIMAL(15,2)', key: 'CHECK', desc: 'Current balance; CHECK (balance >= 0.00)' },
-      { name: 'status', type: 'ENUM("ACTIVE","INACTIVE","FROZEN")', key: '', desc: 'Account operational status (FR-10, FR-11)' },
+      { name: 'status', type: 'ENUM("ACTIVE","INACTIVE","FROZEN")', key: '', desc: 'Account operational status' },
       { name: 'opened_at', type: 'DATETIME', key: '', desc: 'Record creation timestamp' },
       { name: 'updated_at', type: 'DATETIME', key: '', desc: 'Auto-updating modification timestamp' }
     ],
@@ -326,9 +326,11 @@ export default function App() {
 
   // Navigation tab state: 'accounts' | 'employees' | 'diagnostics' | 'overview' | 'statements'
   const [activeNav, setActiveNav] = useState('accounts');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const handleNavChange = useCallback((tab) => {
     setActiveNav(tab);
+    setMobileNavOpen(false);
     try {
       sessionStorage.setItem('bms_active_nav', tab);
       if (window.location.hash !== `#${tab}`) {
@@ -595,31 +597,43 @@ export default function App() {
 
           {/* Quick-fill testing helpers */}
           <div className="login-quickfill-box">
-            <span className="quickfill-title">Quick Test Credentials (Password: <code>Password123!</code>):</span>
+            <div className="quickfill-header">
+              <span className="quickfill-title">Quick Demo Login</span>
+              <span className="quickfill-pass-pill">Password: <code>Password123!</code></span>
+            </div>
             <div className="quickfill-buttons-grid">
               <button
                 type="button"
                 className="quickfill-btn employee-quickfill"
                 onClick={() => handleQuickFill('test.employee1', 'Password123!')}
               >
-                <IconUserCheck size={13} />
-                <span>Employee (test.employee1) &bull; Bank Accounts (Issue #7)</span>
+                <div className="quickfill-btn-left">
+                  <IconUserCheck size={14} />
+                  <span className="quickfill-role">Bank Employee</span>
+                </div>
+                <code className="quickfill-user">test.employee1</code>
               </button>
               <button
                 type="button"
                 className="quickfill-btn admin-quickfill"
                 onClick={() => handleQuickFill('test.admin1', 'Password123!')}
               >
-                <IconShield size={13} />
-                <span>Admin (test.admin1) &bull; Employee Admin (Issue #11)</span>
+                <div className="quickfill-btn-left">
+                  <IconShield size={14} />
+                  <span className="quickfill-role">Administrator</span>
+                </div>
+                <code className="quickfill-user">test.admin1</code>
               </button>
               <button
                 type="button"
                 className="quickfill-btn customer-quickfill"
                 onClick={() => handleQuickFill('test.customer1', 'Password123!')}
               >
-                <IconUsers size={13} />
-                <span>Customer (test.customer1) &bull; Retail View (FR-09)</span>
+                <div className="quickfill-btn-left">
+                  <IconUsers size={14} />
+                  <span className="quickfill-role">Retail Customer</span>
+                </div>
+                <code className="quickfill-user">test.customer1</code>
               </button>
             </div>
           </div>
@@ -652,7 +666,14 @@ export default function App() {
       {/* ------------------------------------------------------------------------
           SIDEBAR (Adapts cleanly based on Role)
           ------------------------------------------------------------------------ */}
-      <aside className="dashboard-sidebar">
+      {mobileNavOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <aside className={`dashboard-sidebar ${mobileNavOpen ? 'mobile-open' : ''}`}>
         {/* Brand */}
         <div className="sidebar-brand-box">
           <div className="sidebar-brand-icon">
@@ -664,11 +685,19 @@ export default function App() {
               {isAdmin ? 'Admin Console' : isEmployee ? 'Staff Terminal' : 'Retail Banking'}
             </span>
           </div>
+          <button
+            type="button"
+            className="mobile-sidebar-close"
+            onClick={() => setMobileNavOpen(false)}
+            aria-label="Close menu"
+          >
+            <IconX size={18} />
+          </button>
         </div>
 
         {/* Navigation Sections */}
         <nav className="sidebar-nav-menu">
-          {/* ADMINISTRATOR NAVIGATION (Feature 5: Structured Architecture) */}
+          {/* ADMINISTRATOR NAVIGATION */}
           {isAdmin ? (
             <>
               {/* SECTION 1: OVERVIEW */}
@@ -676,13 +705,12 @@ export default function App() {
               <button
                 id="nav-admin-dashboard-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'dashboard' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'dashboard' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('dashboard')}
                 title="Executive banking dashboard and real-time overview"
               >
                 <IconLayoutDashboard size={17} />
                 <span>Dashboard</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               {/* SECTION 2: MANAGEMENT */}
@@ -690,37 +718,34 @@ export default function App() {
               <button
                 id="nav-admin-employees-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'employees' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'employees' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('employees')}
-                title="Manage staff, credentials, session revocation & status (Issue #11, Feature 3)"
+                title="Manage staff credentials, permissions, and operational status"
               >
                 <IconUserCheck size={17} />
                 <span>Employee Management</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
                 id="nav-admin-customers-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'customers' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'customers' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('customers')}
-                title="Register and manage customer profiles (FR-05, FR-06)"
+                title="Register and manage customer profiles"
               >
                 <IconUsers size={17} />
                 <span>Customer Management</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
                 id="nav-admin-accounts-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'accounts' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'accounts' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('accounts')}
-                title="Oversee bank account lifecycle, balances & status (Issue #7)"
+                title="Oversee bank account lifecycle, balances, and operational status"
               >
                 <IconLandmark size={17} />
                 <span>Account Management</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               {/* SECTION 3: MONITORING */}
@@ -728,49 +753,45 @@ export default function App() {
               <button
                 id="nav-admin-transactions-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'transactions' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'transactions' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('transactions')}
-                title="Audit bank-wide financial transactions (FR-21)"
+                title="Audit bank-wide financial transactions"
               >
                 <IconCreditCard size={17} />
                 <span>Transaction Ledger</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
                 id="nav-admin-reports-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'reports' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'reports' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('reports')}
-                title="Executive reports, KPI analytics & CSV export (Issue #12, Feature 4)"
+                title="Executive reports, KPI analytics, and statement summaries"
               >
                 <IconFileText size={17} />
                 <span>Reports &amp; Analytics</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
                 id="nav-admin-audit-logs-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'audit-logs' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'audit-logs' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('audit-logs')}
-                title="Centralized system audit logs and activity monitoring (Feature 2)"
+                title="Centralized system audit logs and activity monitoring"
               >
                 <IconShield size={17} />
                 <span>Audit Logs</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
                 id="nav-admin-fraud-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'fraud' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'fraud' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('fraud')}
-                title="Fraud detection alerts, investigations, and rule management (Phase 4)"
+                title="Fraud detection alerts, investigations, and rule management"
               >
                 <IconShieldAlert size={17} />
                 <span>Fraud Monitoring</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               {/* SECTION 4: SYSTEM */}
@@ -795,16 +816,14 @@ export default function App() {
           {/* EMPLOYEE NAVIGATION */}
           {isEmployee && (
             <>
-              {/* Manage Accounts (Issue #7 — Primary Functional Module) */}
               <button
                 id="nav-manage-accounts-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'accounts' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'accounts' && !accountAction ? 'selected' : ''}`}
                 onClick={() => handleNavChange('accounts')}
               >
                 <IconLandmark size={17} />
                 <span>Manage Accounts</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
@@ -821,25 +840,23 @@ export default function App() {
               <button
                 id="nav-employee-activity-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'my-activity' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'my-activity' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('my-activity')}
-                title="Review your personal banking operations and activity history (Feature 4)"
+                title="Review your personal banking operations and activity history"
               >
                 <IconHistory size={17} />
                 <span>My Activity</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
                 id="nav-employee-customers-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'customers' ? 'selected' : ''}`}
+                className={`sidebar-nav-item ${activeNav === 'customers' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('customers')}
-                title="Register and manage customers (FR-04, FR-05, FR-06)"
+                title="Register and manage customers"
               >
                 <IconUsers size={17} />
                 <span>Customers</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
@@ -849,12 +866,12 @@ export default function App() {
                 onClick={() => {
                   setActiveNav('accounts');
                   setAccountAction('deposit');
+                  setMobileNavOpen(false);
                 }}
-                title="Deposit cash into customer accounts (FR-12)"
+                title="Deposit cash into customer accounts"
               >
                 <IconArrowDownCircle size={17} />
                 <span>Cash Deposit</span>
-                <span className="nav-badge-active" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>Active</span>
               </button>
 
               <button
@@ -864,36 +881,34 @@ export default function App() {
                 onClick={() => {
                   setActiveNav('accounts');
                   setAccountAction('withdraw');
+                  setMobileNavOpen(false);
                 }}
-                title="Withdraw cash from customer accounts (FR-13)"
+                title="Withdraw cash from customer accounts"
               >
                 <IconArrowUpCircle size={17} />
                 <span>Cash Withdrawal</span>
-                <span className="nav-badge-active" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>Active</span>
               </button>
 
               <button
                 id="nav-employee-transactions-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'transactions' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('transactions')}
-                title="View customer transactions and audit ledger (FR-21)"
+                className={`sidebar-nav-item ${activeNav === 'transactions' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('transactions')}
+                title="View customer transactions and audit ledger"
               >
                 <IconCreditCard size={17} />
                 <span>Transactions</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
                 id="nav-employee-fraud-btn"
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'fraud' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('fraud')}
-                title="View fraud alerts, investigation cases, and risk metrics (Phase 4)"
+                className={`sidebar-nav-item ${activeNav === 'fraud' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('fraud')}
+                title="View fraud alerts, investigation cases, and risk metrics"
               >
                 <IconShieldAlert size={17} />
                 <span>Fraud Monitoring</span>
-                <span className="nav-badge-active">Active</span>
               </button>
             </>
           )}
@@ -903,12 +918,11 @@ export default function App() {
             <>
               <button
                 type="button"
-                className={`sidebar-nav-item active-item ${activeNav === 'overview' ? 'selected' : ''}`}
-                onClick={() => setActiveNav('overview')}
+                className={`sidebar-nav-item ${activeNav === 'overview' ? 'selected' : ''}`}
+                onClick={() => handleNavChange('overview')}
               >
                 <IconLandmark size={17} />
                 <span>Account Overview</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
@@ -918,12 +932,12 @@ export default function App() {
                 onClick={() => {
                   setSelectedTransferSourceId(null);
                   setTransferModalOpen(true);
+                  setMobileNavOpen(false);
                 }}
-                title="Transfer money from your bank account to another account (FR-15)"
+                title="Transfer money from your bank account to another registered account"
               >
                 <IconSend size={17} />
                 <span>Transfer Funds</span>
-                <span className="nav-badge-active" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>Active</span>
               </button>
 
               <button
@@ -931,29 +945,23 @@ export default function App() {
                 type="button"
                 className={`sidebar-nav-item ${activeNav === 'profile' ? 'selected' : ''}`}
                 onClick={() => handleNavChange('profile')}
-                title="View and update your contact details (FR-06)"
+                title="View and update your contact details"
               >
                 <IconUserCheck size={17} />
                 <span>My Profile</span>
-                <span className="nav-badge-active">Active</span>
               </button>
 
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeNav === 'statements' ? 'selected' : ''}`}
-                onClick={() => {
-                  handleNavChange('statements');
-                }}
-                title="View bank account statements and ledger records (FR-20)"
+                onClick={() => handleNavChange('statements')}
+                title="View bank account statements and ledger records"
               >
                 <IconHistory size={17} />
                 <span>Statements</span>
-                <span className="nav-badge-active">Active</span>
               </button>
             </>
           )}
-
-
         </nav>
 
         {/* Sidebar Footer: Profile & Logout */}
@@ -989,26 +997,35 @@ export default function App() {
       <div className="dashboard-main-viewport">
         {/* Top Navigation Bar */}
         <header className="dashboard-topbar">
-          <div className="topbar-breadcrumb">
-            <span className="breadcrumb-root">
-              {isAdmin ? 'Administration' : isEmployee ? 'Branch Operations' : 'Retail Banking'}
-            </span>
-            <span className="breadcrumb-separator">/</span>
-            <span className="breadcrumb-current">
-              {activeNav === 'profile'
-                ? 'My Profile'
-                : activeNav === 'diagnostics'
-                ? 'System Diagnostics'
-                : activeNav === 'dashboard'
-                ? 'Executive Dashboard'
-                : activeNav === 'accounts'
-                ? 'Account Management'
-                : activeNav === 'employees'
-                ? 'Employee Management'
-                : activeNav === 'transactions'
-                ? 'Transaction Ledger'
-                : activeNav === 'reports'
-                ? 'Reports & Analytics'
+          <div className="topbar-left-cluster">
+            <button
+              type="button"
+              className="mobile-sidebar-toggle"
+              onClick={() => setMobileNavOpen((prev) => !prev)}
+              aria-label="Toggle navigation menu"
+            >
+              <IconMenu size={20} />
+            </button>
+            <div className="topbar-breadcrumb">
+              <span className="breadcrumb-root">
+                {isAdmin ? 'Administration' : isEmployee ? 'Branch Operations' : 'Retail Banking'}
+              </span>
+              <span className="breadcrumb-separator">/</span>
+              <span className="breadcrumb-current">
+                {activeNav === 'profile'
+                  ? 'My Profile'
+                  : activeNav === 'diagnostics'
+                  ? 'System Diagnostics'
+                  : activeNav === 'dashboard'
+                  ? 'Executive Dashboard'
+                  : activeNav === 'accounts'
+                  ? 'Account Management'
+                  : activeNav === 'employees'
+                  ? 'Employee Management'
+                  : activeNav === 'transactions'
+                  ? 'Transaction Ledger'
+                  : activeNav === 'reports'
+                  ? 'Reports & Analytics'
                 : activeNav === 'audit-logs'
                 ? 'System Audit Logs'
                 : isEmployee && activeNav === 'my-activity'
@@ -1018,6 +1035,7 @@ export default function App() {
                 : 'Workspace Overview'}
             </span>
           </div>
+        </div>
 
           <div className="topbar-right-controls">
             {/* Live API & Database Status Pill */}
@@ -1203,7 +1221,7 @@ export default function App() {
                   <h4>Online Banking Notice &bull; Cash Counter Clearance Policy</h4>
                 </div>
                 <p>
-                  You are securely logged into your personal <strong>Retail Banking Portal</strong>. Under bank security policy (FR-03, AUTH_002), cash counter deposits and cash withdrawals must be processed in-person at a branch teller window by an authorized <strong>Bank Employee</strong>.
+                  You are securely logged into your personal <strong>Retail Banking Portal</strong>. Under bank security policy, cash counter deposits and cash withdrawals must be processed in-person at a branch teller window by an authorized bank employee.
                 </p>
               </div>
             </div>
@@ -1345,7 +1363,7 @@ export default function App() {
                   </div>
                 </div>
                 <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '1rem', fontStyle: 'italic' }}>
-                  * Employee role assignments, operational statuses, and security permissions are strictly managed by Bank Administrators (FR-23, FR-24).
+                  * Employee role assignments, operational statuses, and security permissions are strictly managed by Bank Administrators.
                 </p>
               </div>
 
@@ -1396,189 +1414,24 @@ export default function App() {
             </div>
           ) : (
             /* ==================================================================
-               CUSTOMER: RETAIL BANKING PORTAL (FR-09 Live Account Overview)
+               DEFAULT / WORKSPACE ROUTE FALLBACK
                ================================================================== */
             <div className="role-portal-view">
-              <div className="portal-banner">
-                <div className="portal-banner-icon icon-customer-banner">
-                  <IconLandmark size={28} />
-                </div>
-                <div>
-                  <h1 className="portal-title">Personal Online Banking Portal</h1>
-                  <p className="portal-subtitle">
-                    Account Holder: <strong>{currentUser.displayName}</strong> &bull; Customer ID #{currentUser.customerId || '1'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Verified Accounts Live Ledger Section (FR-09) */}
-              <div className="customer-accounts-section" style={{ marginBottom: '2rem' }}>
-                <div className="emp-page-header" style={{ marginBottom: '1rem' }}>
-                  <div>
-                    <h2 className="emp-page-title" style={{ fontSize: '1.25rem' }}>Your Bank Accounts</h2>
-                    <p className="emp-page-subtitle">
-                      Live account balances and operational status from the core banking ledger (FR-09).
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    <button
-                      type="button"
-                      className="btn-secondary-custom"
-                      onClick={loadCustomerAccounts}
-                      disabled={custAccountsLoading}
-                    >
-                      <IconCreditCard size={15} />
-                      <span>{custAccountsLoading ? 'Refreshing...' : 'Refresh Balance'}</span>
-                    </button>
-                    <button
-                      id="customer-header-transfer-btn"
-                      type="button"
-                      className="btn-primary-custom"
-                      onClick={() => {
-                        setSelectedTransferSourceId(null);
-                        setTransferModalOpen(true);
-                      }}
-                      disabled={customerAccounts.filter((a) => a.status === 'ACTIVE').length === 0}
-                      style={{ gap: '0.45rem', fontSize: '0.85rem' }}
-                      title="Initiate fund transfer between accounts (FR-15)"
-                    >
-                      <IconSend size={15} />
-                      <span>Transfer Funds</span>
-                    </button>
-                  </div>
-                </div>
-
-                {custAccountsLoading ? (
-                  <div className="table-skeleton-container" style={{ padding: '1rem' }}>
-                    <div className="skeleton-row" />
-                    <div className="skeleton-row" />
-                  </div>
-                ) : customerAccounts.length === 0 ? (
-                  <div className="empty-state-box" style={{ padding: '2rem' }}>
-                    <IconCreditCard size={32} className="empty-state-icon" />
-                    <h3>No Bank Accounts Linked</h3>
-                    <p>Please contact branch staff to open a savings or current account for your customer profile.</p>
-                  </div>
-                ) : (
-                  <div className="emp-stats-grid">
-                    {customerAccounts.map((acc) => {
-                      const numVal = Number(acc.balance) || 0;
-                      const formatted = new Intl.NumberFormat('en-IN', {
-                        style: 'currency',
-                        currency: 'INR',
-                        minimumFractionDigits: 2
-                      }).format(numVal);
-
-                      return (
-                        <div key={acc.accountId} className="emp-stat-card" style={{ padding: '1.25rem 1.5rem' }}>
-                          <div className="stat-icon-wrapper active-icon">
-                            <IconLandmark size={22} />
-                          </div>
-                          <div className="stat-details" style={{ width: '100%' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span className="stat-label">{acc.accountType} ACCOUNT</span>
-                              <span className={`status-badge-custom badge-${String(acc.status).toLowerCase()}`} style={{ fontSize: '0.68rem', padding: '0.15rem 0.5rem' }}>
-                                <span className="status-dot" />
-                                <span>{acc.status}</span>
-                              </span>
-                            </div>
-                            <span className="stat-value font-mono" style={{ fontSize: '1.4rem', color: '#60a5fa', margin: '0.35rem 0' }}>
-                              {acc.accountNumber}
-                            </span>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '0.25rem' }}>
-                              <span className="stat-desc">Available Balance</span>
-                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: '800', fontSize: '1.25rem', color: '#f8fafc' }}>
-                                {formatted}
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem' }}>
-                              <button
-                                type="button"
-                                className="btn-secondary-custom"
-                                style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
-                                onClick={() => {
-                                  setCustomerStatementModal(acc);
-                                }}
-                              >
-                                <IconHistory size={14} />
-                                <span>Statement</span>
-                              </button>
-                              {acc.status === 'ACTIVE' && (
-                                <button
-                                  type="button"
-                                  className="btn-primary-custom"
-                                  style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem', gap: '0.4rem', padding: '0.4rem 0.65rem' }}
-                                  onClick={() => {
-                                    setSelectedTransferSourceId(acc.accountId);
-                                    setTransferModalOpen(true);
-                                  }}
-                                  title="Transfer funds from this account (FR-15)"
-                                >
-                                  <IconSend size={14} />
-                                  <span>Transfer</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Customer Roadmap Notice Box */}
-              <div className="roadmap-notice-box">
-                <div className="roadmap-notice-header">
-                  <IconShield size={18} className="roadmap-shield-icon" />
-                  <h4>Online Banking Roadmap Notice (SRS Section 3 &amp; Sprint 2)</h4>
-                </div>
-                <p>
-                  You are securely logged into your personal <strong>Retail Banking Portal</strong>. Under the system's role-based security specification (FR-03, NFR-02), administrative modules like <strong>Employee Account Management</strong> are inaccessible to customers.
+              <div className="empty-state-box" style={{ padding: '3.5rem 1.5rem', textAlign: 'center' }}>
+                <IconLandmark size={44} className="text-primary" style={{ marginBottom: '1rem', opacity: 0.8 }} />
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#f8fafc', marginBottom: '0.5rem' }}>
+                  Select an Operational View
+                </h2>
+                <p style={{ color: '#94a3b8', maxWidth: '440px', margin: '0 auto 1.5rem', lineHeight: 1.5 }}>
+                  Choose a module from the navigation sidebar to access your core banking workspace.
                 </p>
-                <div className="roadmap-timeline-box">
-                  <span className="timeline-badge">Sprint 2 Customer Banking Features</span>
-                  <div className="timeline-items-grid">
-                    <div className="timeline-item">
-                      <span className="item-req">FR-09</span>
-                      <span className="item-title">View Balance &amp; Details</span>
-                      <span className="item-status" style={{ color: '#10b981' }}>Live (Implemented)</span>
-                    </div>
-                    <div className="timeline-item">
-                      <span className="item-req">FR-15, FR-17</span>
-                      <span className="item-title">Direct Fund Transfer</span>
-                      <span className="item-status">Sprint 2</span>
-                    </div>
-                    <div className="timeline-item">
-                      <span className="item-req">FR-20</span>
-                      <span className="item-title">Transaction History Statements</span>
-                      <span className="item-status">Sprint 2</span>
-                    </div>
-                    <div className="timeline-item">
-                      <span className="item-req">FR-06, FR-22</span>
-                      <span className="item-title">Profile Update &amp; Password</span>
-                      <span className="item-status">Sprint 2</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="roadmap-actions-row">
-                  <button
-                    type="button"
-                    className="btn-secondary-custom"
-                    onClick={() => handleNavChange('profile')}
-                  >
-                    <IconUserCheck size={15} />
-                    <span>View My Profile</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary-custom"
-                    onClick={handleLogout}
-                  >
-                    <IconLogOut size={15} />
-                    <span>Sign Out</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="btn-primary-custom"
+                  onClick={() => handleNavChange(isAdmin ? 'dashboard' : isEmployee ? 'accounts' : 'overview')}
+                >
+                  Go to Primary Workspace
+                </button>
               </div>
             </div>
           )}

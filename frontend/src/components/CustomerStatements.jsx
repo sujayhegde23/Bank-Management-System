@@ -307,7 +307,7 @@ export default function CustomerStatements({
       {/* Page Title & Breadcrumb (Screen Only) */}
       <div className="statements-header-bar no-print">
         <div className="header-titles">
-          <div className="badge-tag">RETAIL LEDGER • FR-20</div>
+          <div className="badge-tag">RETAIL BANKING • STATEMENTS</div>
           <h2 className="statements-title">
             <IconFileText size={22} className="text-primary" />
             <span>Account Statements</span>
