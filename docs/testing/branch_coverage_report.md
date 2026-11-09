@@ -45,21 +45,21 @@ The fraud engine implements four deterministic detection rules operating on norm
 
 ```mermaid
 flowchart TD
-    Start([Evaluate Transaction]) --> R1{Rule 1: HIGH_AMOUNT<br/>amountInPaise > thresholdInPaise}
-    R1 -- Yes --> W1[+30 Weight]
-    R1 -- No --> R2{Rule 2: HIGH_VELOCITY<br/>txnCount > threshold}
+    Start(["Evaluate Transaction"]) --> R1{"Rule 1: HIGH_AMOUNT<br/>amountInPaise > thresholdInPaise"}
+    R1 -- "Yes" --> W1["+30 Weight"]
+    R1 -- "No" --> R2{"Rule 2: HIGH_VELOCITY<br/>txnCount > threshold"}
     W1 --> R2
     
-    R2 -- Yes --> W2[+25 Weight]
-    R2 -- No --> R3{Rule 3: NEW_BENEFICIARY<br/>priorTransfers === 0}
+    R2 -- "Yes" --> W2["+25 Weight"]
+    R2 -- "No" --> R3{"Rule 3: NEW_BENEFICIARY<br/>priorTransfers === 0"}
     W2 --> R3
     
-    R3 -- Yes --> W3[+25 Weight]
-    R3 -- No --> R4{Rule 4: UNUSUAL_HOUR<br/>hour in [startHour, endHour)}
+    R3 -- "Yes" --> W3["+25 Weight"]
+    R3 -- "No" --> R4{"Rule 4: UNUSUAL_HOUR<br/>01:00 <= hour < 05:00 IST"}
     W3 --> R4
     
-    R4 -- Yes --> W4[+20 Weight]
-    R4 -- No --> Sum[Calculate Aggregate Risk Score]
+    R4 -- "Yes" --> W4["+20 Weight"]
+    R4 -- "No" --> Sum["Calculate Aggregate Risk Score"]
     W4 --> Sum
 ```
 
@@ -108,7 +108,7 @@ flowchart TD
 
 #### Detailed Branch Evaluations:
 1. **Empty Rules / Zero Score Branch:** When no rules trigger, Score = 0, mapped to `LOW` risk level and `APPROVED` decision (tested in baseline transfers).
-2. **Medium Risk Boundary Branch (30 <= Score <= 59):** Single large transfer (Score = 30) or combined moderate rules (e.g. Score = 55 in `fraudPipelineBugInvestigation.test.js:237`) mapped to `MEDIUM` risk level and `REVIEW_REQUIRED` decision.
+2. **Medium Risk Boundary Branch (30 <= Score <= 59):** Single large transfer (Score = 30 in `fraudPipelineBugInvestigation.test.js:237`) or combined moderate rules mapped to `MEDIUM` risk level and `REVIEW_REQUIRED` decision.
 3. **High Risk Threshold Branch (60 <= Score <= 79):** Multi-rule combinations (e.g. `HIGH_AMOUNT` [30] + `HIGH_VELOCITY` [25] + `UNUSUAL_HOUR` [20] = 75) mapped to `HIGH` risk level and `FLAGGED` decision.
 4. **Critical Risk Threshold Branch (80 <= Score <= 100):** Severe combinations (e.g. `HIGH_AMOUNT` [30] + `HIGH_VELOCITY` [25] + `NEW_BENEFICIARY` [25] = 80) mapped to `CRITICAL` risk level and `FLAGGED` decision.
 5. **Upper Cap Branch (Score > 100):** Score ceiling capped at 100 via `Math.min(100, rawScore)`.
@@ -272,8 +272,8 @@ sequenceDiagram
     Note over OB: Asynchronous Outbox Cycle
     OB->>TS: SELECT ... FOR UPDATE SKIP LOCKED (60s lease)
     OB->>FS: evaluateTransaction(TXN-INT-30)
-    Note over FS: Evaluate 4 Rules (HIGH_AMOUNT [30] + NEW_BENEFICIARY [25])
-    FS-->>OB: Score: 55, Level: MEDIUM, Decision: REVIEW_REQUIRED
+    Note over FS: Evaluate 4 Rules (HIGH_AMOUNT [30] triggered)
+    FS-->>OB: Score: 30, Level: MEDIUM, Decision: REVIEW_REQUIRED
     OB->>FS: Persist Assessment & Create Case Alert
     OB->>TS: UPDATE transaction_outbox (STATUS: PROCESSED)
 ```
