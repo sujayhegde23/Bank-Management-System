@@ -12,7 +12,7 @@
 | **Node.js Runtime** | v24.16.0 |
 | **Measurement Standard** | IEEE Std 829-2008 / ISO/IEC/IEEE 29119-4 |
 | **Coverage Instrumentation** | Node.js v24 Native V8 Coverage Engine (`--experimental-test-coverage`) |
-| **Automated Test Scope** | 28 automated integration test suites (638 tests: 637 passed, 1 failed, 0 skipped, 0 todo) |
+| **Automated Test Scope** | 28 automated integration test suites (638 tests: 638 passed, 0 failed, 0 skipped, 0 todo) |
 | **Target Codebase** | All 42 production modules under `backend/src` |
 | **Related Documents** | [Test Plan](../phase1/test_plan.md), [Test Cases](../phase1/test_cases.md), [Code Coverage Report](code_coverage_report.md), [System Validation Report](system_validation_report.md) |
 
