@@ -235,6 +235,17 @@ describe('Fraud Detection Pipeline Bug Investigation Verification Suite', () => 
   // ============================================================================
   describe('3. Integration, Outbox Worker & Alert Generation', () => {
     it('Large transfer triggers HIGH_AMOUNT and persists risk assessment with decision REVIEW_REQUIRED', async () => {
+      // Pre-seed an established transfer history between Account 1 and Account 184
+      // so NEW_BENEFICIARY is false and HIGH_AMOUNT is verified in isolation (Score = 30)
+      const priorTxId = TEST_BASE_ID + 29;
+      await query(
+        `INSERT INTO bank_transactions
+         (transaction_id, transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks, created_at)
+         VALUES (?, ?, 'TRANSFER', 500.00, 1, 184, 4, 'Prior established transfer', DATE_SUB(NOW(), INTERVAL 1 HOUR))`,
+        [priorTxId, `TXN-PRIOR-${priorTxId}`]
+      );
+      createdTxnIds.push(priorTxId);
+
       const intTxId = TEST_BASE_ID + 30;
       await query(
         `INSERT INTO bank_transactions
