@@ -1,32 +1,28 @@
 # Software Test Plan
 
-## Bank Management System
+## Bank Management System with Rule-Driven Fraud Detection
 
 | Item | Details |
 |---|---|
 | Document | Software Test Plan |
-| Project | Bank Management System (academic prototype) |
-| Phase | Phase 1: Test Planning, Execution Tracking & Traceability |
-| Version | 1.2 |
-| Date | 22 October 2026 |
+| Project | Bank Management System with MongoDB-Based Rule-Driven Fraud Detection |
+| Phase | Formal Testing, Verification & Validation |
+| Version | 1.3 |
+| Date | 08 November 2026 |
 | Standard followed | IEEE Std 829-2008 structure, aligned with ISO/IEC/IEEE 29119-3 |
-| Related documents | [SRS](SRS.md), [Architecture and Design Specification](architecture_design.md), [RTM](rtm.md) |
+| Related documents | [SRS](SRS.md), [Architecture & Design Specification](architecture_design.md), [Test Cases](test_cases.md), [RTM](rtm.md) |
 
 ### Revision History
 
-| Version | Date | Description |
-|---|---|---|
-| 1.0 | 29 Sep 2026 | Baseline IEEE-style Software Test Plan for Phase 1 requirements. All test cases in planned/Not Executed state. |
-| 1.1 | 21 Oct 2026 | Technology stack alignment with React/Vite, Node.js/Express, and MySQL InnoDB; corrected Section 4.12 review cross-references. |
-| 1.2 | 22 Oct 2026 | Task/Issue #13: Test plan execution tracking and RTM alignment following Issue #15 (application scaffold & database schema) and Issue #5 (user authentication and session management). Recorded actual results and evidence for 26 automated backend tests, frontend build/lint verification, and manual browser testing; established explicit test execution statuses. |
+| Version | Date | Description | Author |
+|---|---|---|---|
+| 1.0 | 29 Sep 2026 | Baseline IEEE-style Software Test Plan for Phase 1 requirements. All test cases in planned/Not Executed state. | Quality Assurance Team |
+| 1.1 | 21 Oct 2026 | Technology stack alignment with React/Vite, Node.js/Express, and MySQL InnoDB; corrected Section 4.12 review cross-references. | Quality Assurance Team |
+| 1.2 | 22 Oct 2026 | Task/Issue #13: Test plan execution tracking and RTM alignment following application scaffold (Issue #15) and user authentication (Issue #5). Recorded actual results for 26 automated backend tests, frontend build/lint verification, and manual browser testing. | Quality Assurance Team |
+| 1.3 | 08 Nov 2026 | Major revision for formal testing phase. Expanded test plan scope to encompass the entire dual-datastore system (MySQL InnoDB and MongoDB 6/7), rule-driven fraud detection engine, asynchronous transactional outbox worker, customer data isolation, employee administration, and report exports. Synchronized with 28 automated integration test suites comprising 630 automated test cases in `backend/tests/`. Established standalone [Test Case Specification](test_cases.md) (TC-01 through TC-46), resolved historical test status contradictions, verified security checks SV-01 through SV-10, and updated requirement traceability. Explicitly clarified fraud classifications as post-transaction analytical risk assessments. | Quality Assurance Team |
 
-> **Current Implementation & Execution State:** The foundation and authentication modules have been implemented
-> (Issue #15 application scaffold, MySQL schema, and health diagnostics; Issue #5 user login, session management,
-> and RBAC middleware). 26 backend integration tests (in `tests/auth.test.js` and `tests/health.test.js`) have been
-> executed and passed with 100% success rate, alongside verified frontend builds and manual browser authentication tests.
-> Test cases covering these implemented features (TC-01, TC-02, TC-09, TC-13, REV-01, REV-02, REV-03) are marked
-> as **Passed**. Tests covering transactional banking workflows, account management, customer administration,
-> and reporting remain **Pending Implementation** as their respective features are scheduled for subsequent sprints.
+> **Current Implementation & Execution State:**  
+> The Bank Management System and its MongoDB-based fraud detection subsystem are fully implemented. The test harness consists of **28 automated integration test suites** containing **630 automated test cases** executed via the native Node.js test runner (`node --test --test-concurrency=1`). All 630 automated backend tests pass with a 100% success rate. Code and branch coverage is measured using native Node.js v24 coverage tooling (`--experimental-test-coverage`). Frontend code quality is verified via static analysis (`oxlint`) and bundle compilation (`vite build`), while role-specific UI navigation is validated through structured manual browser walkthroughs (`TC-21`). Detailed individual test specifications are formalized in the dedicated [Test Case Specification](test_cases.md).
 
 ---
 
@@ -36,10 +32,10 @@
 2. [Test Items](#2-test-items)
 3. [Features to be Tested](#3-features-to-be-tested)
 4. [Test Approach](#4-test-approach)
-5. [Test Environment and Validation](#5-test-environment-and-validation)
+5. [Test Environment and Security Validation](#5-test-environment-and-security-validation)
 6. [Entry and Exit Criteria](#6-entry-and-exit-criteria)
 7. [Test Deliverables](#7-test-deliverables)
-8. [Test Cases](#8-test-cases)
+8. [Test Cases & Master Summary](#8-test-cases--master-summary)
 9. [Test Traceability Matrix](#9-test-traceability-matrix)
 10. [Roles, Schedule and Risks](#10-roles-schedule-and-risks)
 
@@ -48,77 +44,72 @@
 ## 1. Introduction
 
 ### 1.1 Purpose
-
-This test plan describes the scope, approach, environment, security validation,
-test cases and traceability for testing the Bank Management System. It ensures
-that every requirement in the [SRS](SRS.md) is verified before the prototype is
-demonstrated.
+This software test plan prescribes the scope, approach, environment, security checks, test case catalog, and traceability for the formal testing phase of the **Bank Management System with MongoDB-Based Rule-Driven Fraud Detection**. It ensures that every requirement defined in the [Software Requirements Specification](SRS.md) and all design commitments in the [Architecture and Design Specification](architecture_design.md) are rigorously verified across the dual-datastore architecture before final system demonstration and release.
 
 ### 1.2 Scope
+Testing encompasses:
+- Exactly 25 Functional Requirements (`FR-01` to `FR-25`) defined in [SRS Section 3](SRS.md#3-functional-requirements).
+- Exactly 18 Non-Functional Requirements (`NFR-01` to `NFR-18`) defined in [SRS Section 4](SRS.md#4-non-functional-requirements).
+- Five fraud monitoring and investigation use cases (`UC-27` to `UC-31`) defined in [Actors and Use Cases](actors_usecases.md).
+- Three authorized actor roles: **Customer**, **Bank Employee**, and **Administrator**.
+- Dual-datastore persistence spanning MySQL InnoDB relational storage (user credentials, accounts, financial ledger, outbox) and MongoDB document storage (fraud rules, risk assessments, alerts, investigations).
 
-Testing covers the functional requirements FR-01 to FR-25 and the non-functional
-requirements NFR-01 to NFR-18 defined in the [SRS](SRS.md), for all three user
-roles: Customer, Bank Employee and Administrator.
-
-Testing is performed on the academic prototype in a local environment using
-dummy data only. Load testing at production scale, penetration testing by
-external specialists, and testing of out-of-scope features (UPI, payment
-gateways, loans, inter-bank settlement) are not included.
+Testing is performed in a controlled local test environment using synthesized test data. Out-of-scope features (UPI, credit/debit card processing, third-party payment gateways, loans, multi-currency foreign exchange, and automated frontend UI browser automation) are excluded from the test harness.
 
 ### 1.3 Objectives
-
-1. Verify that every functional requirement behaves as specified in its
-   acceptance criterion.
-2. Verify that security controls prevent unauthorized access and protect
-   passwords, balances and transaction records (SO-01 to SO-04).
-3. Verify that financial operations are atomic and keep balances consistent.
-4. Verify that response times meet NFR-06 and NFR-07 under normal prototype
-   usage.
-5. Record defects and confirm they are fixed before the final demonstration.
-6. Maintain traceability from each requirement to at least one verification
-   activity.
+1. **Requirements Verification:** Verify that every functional requirement behaves in exact compliance with its acceptance criteria across all three actor roles.
+2. **Security & Data Isolation:** Verify that authentication, role-based authorization, customer horizontal data isolation (IDOR defense), and bcrypt password hashing protect system assets (`SO-01` to `SO-04`, `SV-01` to `SV-10`).
+3. **Financial Ledger ACID Integrity:** Verify that cash deposits, cash withdrawals, and customer fund transfers maintain zero-sum conservation, atomic commit/rollback behavior, and strict row-level locking.
+4. **Fraud Analytics Decoupling:** Verify that the asynchronous outbox worker polls and claims events via `SKIP LOCKED`, executes 4 fraud detection rules (`HIGH_AMOUNT`, `HIGH_VELOCITY`, `NEW_BENEFICIARY`, `UNUSUAL_HOUR`), and records analytical assessments in MongoDB without blocking or rolling back banking ledger transactions.
+5. **Investigation Lifecycle & Rule Reconfiguration:** Verify that administrators can dynamically adjust rule thresholds, inspect risk scores, and transition investigation statuses across the state machine.
+6. **Defect Tracking & Comprehensive Traceability:** Maintain 100% bidirectional traceability from requirements to automated test suites in the [RTM](rtm.md).
 
 ### 1.4 References
-
-1. IEEE Std 829-2008, *IEEE Standard for Software and System Test
-   Documentation*.
-2. ISO/IEC/IEEE 29119-3:2021, *Software testing — Part 3: Test documentation*.
-3. [Software Requirements Specification](SRS.md)
-4. [Software Architecture and Design Specification](architecture_design.md)
+1. IEEE Std 829-2008, *IEEE Standard for Software and System Test Documentation*.
+2. ISO/IEC/IEEE 29119-3:2021, *Software and systems engineering — Software testing — Part 3: Test documentation*.
+3. [Software Requirements Specification (SRS)](SRS.md)
+4. [Software Architecture and Design Specification (SAD)](architecture_design.md)
 5. [Actors and Use Cases](actors_usecases.md)
-6. [Requirement Traceability Matrix](rtm.md)
-7. [Feasibility Study](feasibility_study.md)
+6. [Test Case Specification](test_cases.md)
+7. [Requirement Traceability Matrix (RTM)](rtm.md)
+8. [Feasibility Study](feasibility_study.md)
 
 ### 1.5 Definitions
 
-| Term | Meaning |
+| Term | Definition in this Project |
 |---|---|
-| Test case (TC) | A set of preconditions, inputs, steps and expected results used to verify a requirement |
-| Negative test | A test that uses invalid input or an unauthorized action and expects the system to reject it |
-| Boundary value | A value at the edge of a valid range, such as an amount equal to the account balance |
-| Defect | A difference between the expected result and the actual result |
-| Test data reset | Restoring the database to the baseline test data set (Section 5) |
+| **Analytical Assessment Decoupling** | Architectural separation where fraud detection runs asynchronously post-transaction; assessment statuses (`APPROVED`, `REVIEW_REQUIRED`, `FLAGGED`) are risk classifications for monitoring and do not block banking transactions. |
+| **Transactional Outbox** | A design pattern where financial ledger updates and outgoing fraud evaluation events are committed atomically inside the same MySQL database transaction. |
+| **Worker Leasing** | Distributed locking mechanism using `FOR UPDATE SKIP LOCKED`, assigning a 60-second processing lease with 20-second heartbeat renewal to eliminate duplicate processing. |
+| **Integer Paise Precision** | Representing currency amounts in integer paise (1 INR = 100 paise) to eliminate IEEE 754 floating-point rounding errors during threshold comparisons. |
+| **Sliding Window** | Dynamic time-window evaluation (e.g. 60 minutes) counting all transactions on an account up to the exact millisecond of the current transaction. |
+| **Horizontal Data Isolation** | Enforcing customer ownership checks so Customer A cannot view, query, or transact upon Customer B's accounts or records (IDOR defense). |
+| **Test Case (TC)** | A structured specification containing unique ID, requirement mappings, preconditions, inputs, steps, expected results, and actual execution evidence. |
 
 ---
 
 ## 2. Test Items
 
-The test items are the planned modules of the system, as defined in the
-[Architecture and Design Specification](architecture_design.md#4-component-architecture).
+Test items represent the logical and physical modules of the Bank Management System, as defined in [Architecture Specification Section 4](architecture_design.md#4-component-architecture).
 
-| Test Item | Architecture Component & Technology | Requirements |
-|---|---|---|
-| User Interface | Web User Interface (React SPA built with Vite) | NFR-11, NFR-12, NFR-13 |
-| Authentication & Session | Authentication & Authorization Service (Express middleware & service) | FR-01, FR-02, FR-03, FR-22, NFR-01, NFR-02, NFR-05 |
-| Customer Management | Customer Service (Node.js service layer) | FR-04, FR-05, FR-06 |
-| Account Management | Account Service (Node.js service layer) | FR-07, FR-08, FR-09, FR-10, FR-11 |
-| Deposit & Withdrawal | Transaction Service (Node.js service layer) | FR-11, FR-12, FR-13, FR-14, FR-18, FR-19 |
-| Fund Transfer | Transaction Service (Node.js service layer) | FR-11, FR-15, FR-16, FR-17, FR-18, FR-19 |
-| Transaction History & Records | Transaction Service (Node.js service layer) | FR-20, FR-21 |
-| Employee Administration | Employee Administration Service (Node.js service layer) | FR-23, FR-24 |
-| Administrative Reporting | Reporting Service (Node.js service layer) | FR-25 |
-| Input Validation | Input Validation (Express request middleware) | NFR-04, NFR-18 |
-| Data Access & Storage | Data Access Layer (Node.js) & MySQL Relational Database | NFR-08, NFR-09, NFR-10, NFR-16, NFR-17 |
+| Test Item | Component & Technology | Target Requirements | Target Test Cases |
+|---|---|---|---|
+| **Web User Interface** | React 18 SPA built with Vite; role-adapted views | NFR-11, NFR-12, NFR-13 | TC-21 |
+| **Authentication & Session** | Node.js Express service, bcrypt, MySQL session store | FR-01, FR-02, FR-03, FR-22, NFR-01, NFR-02, NFR-05 | TC-01, TC-02, TC-03, TC-09, TC-13, TC-17 |
+| **Customer Administration** | Customer Service, atomic user-customer transactions | FR-04, FR-05, FR-06 | TC-04, TC-20 |
+| **Customer Data Isolation** | Horizontal authorization middleware, ownership verification | NFR-01, NFR-03 | TC-16, TC-22, TC-23, TC-27 |
+| **Account Management** | Account Service, account number generator, status engine | FR-07, FR-08, FR-09, FR-10, FR-11 | TC-08, TC-14, TC-22, TC-30 |
+| **Cash Operations** | Transaction Service (cash deposits and withdrawals) | FR-11, FR-12, FR-13, FR-14, FR-18, FR-19 | TC-05, TC-06, TC-15, TC-26 |
+| **Fund Transfers** | Transaction Service, two-phase balance update, beneficiary checks | FR-15, FR-16, FR-17, FR-18, FR-19, NFR-08, NFR-10 | TC-07, TC-10, TC-24 |
+| **History & Statements** | Transaction query service, date filtering, pagination | FR-19, FR-20, FR-21 | TC-16, TC-19, TC-25 |
+| **Employee Administration** | Employee Service, CRUD, immediate session revocation | FR-23, FR-24, NFR-02 | TC-18, TC-29 |
+| **Administrative Reporting** | Reporting Service, SQL aggregations, RFC 4180 CSV export | FR-25, NFR-03, NFR-06 | TC-11, TC-19, TC-31, TC-32 |
+| **Audit Trail Logging** | Centralized audit logger, append-only MySQL storage | NFR-02, NFR-03 | TC-28, TC-29 |
+| **MongoDB Foundation** | MongoDB collections, JSON Schema validators, compound indexes | UC-27 to UC-31 | TC-33 |
+| **Fraud Detection Engine** | 4 analytical rules, paise evaluation, risk scoring (0–100) | UC-27, UC-28, UC-30, NFR-08 | TC-34, TC-35, TC-36, TC-37, TC-38 |
+| **Transactional Outbox Worker** | Asynchronous polling worker, `SKIP LOCKED`, heartbeat, retries | UC-27, NFR-09 | TC-39, TC-40, TC-41 |
+| **Fraud Dashboard & Cases** | Fraud monitoring API, alert policy, case state machine | UC-27, UC-29, UC-30, UC-31 | TC-42, TC-43, TC-44, TC-45 |
+| **End-to-End Pipeline** | Banking-to-fraud integration regression harness | All FRs, UC-27 to UC-31 | TC-46 |
 
 ---
 
@@ -126,733 +117,324 @@ The test items are the planned modules of the system, as defined in the
 
 ### 3.1 Functional Features
 
-| Feature | Requirement IDs | Test Cases |
-|---|---|---|
-| Login with valid and invalid credentials | FR-01 | TC-01, TC-02 |
-| Logout and session invalidation | FR-02 | TC-13 |
-| Role-based access to functions | FR-03 | TC-03 |
-| Customer registration | FR-04 | TC-04 |
-| Viewing and updating customer information | FR-05, FR-06 | TC-20 |
-| Account creation and unique account numbers | FR-07, FR-08 | TC-14 |
-| Viewing account details and balance | FR-09 | TC-16 |
-| Account status management and restrictions | FR-10, FR-11 | TC-08 |
-| Deposit | FR-12 | TC-05 |
-| Withdrawal, including insufficient balance | FR-13, FR-14 | TC-15, TC-06 |
-| Fund transfer, including balance check | FR-15, FR-16, FR-17 | TC-07 |
-| Transaction IDs and transaction records | FR-18, FR-19 | TC-05, TC-07, TC-15 |
-| Customer transaction history | FR-20 | TC-16 |
-| Employee and administrator transaction view | FR-21 | TC-19 |
-| Password change | FR-22 | TC-17 |
-| Employee account creation and deactivation | FR-23, FR-24 | TC-18 |
-| Basic reports | FR-25 | TC-19 |
+| Feature Domain | Requirements | Scope & Verification Highlights | Primary Test Cases |
+|---|---|---|---|
+| **User Authentication** | FR-01, FR-02, FR-03 | Login for 3 roles, session cookie establishment, logout invalidation, RBAC middleware | TC-01, TC-02, TC-03, TC-13 |
+| **Customer Profile Management** | FR-04, FR-05, FR-06 | Customer registration, unique customer ID, profile search, permitted updates | TC-04, TC-20 |
+| **Account Lifecycle** | FR-07, FR-08, FR-09, FR-10 | Account opening (SAVINGS/CURRENT), unique number generation, status toggling | TC-08, TC-14, TC-22, TC-30 |
+| **Status Restrictions** | FR-10, FR-11 | Preventing deposits, withdrawals, and transfers on FROZEN or INACTIVE accounts | TC-08, TC-22 |
+| **Cash Ledger Operations** | FR-12, FR-13, FR-14 | Cash deposits, cash withdrawals, overdraft rejection, zero-balance boundary | TC-05, TC-06, TC-15, TC-26 |
+| **Customer Fund Transfers** | FR-15, FR-16, FR-17 | Two-phase balance update, beneficiary masking, self-transfer block, balance checks | TC-07, TC-24 |
+| **Ledger Records & Receipts** | FR-18, FR-19 | Unique transaction references (`TXN-...`), append-only ledger, digital receipts | TC-05, TC-07, TC-15, TC-26 |
+| **Customer Statements & History** | FR-20 | Chronological history, descending order, monthly statement calculation | TC-16, TC-25 |
+| **Global Transaction Audit** | FR-21 | Multi-parameter transaction ledger query for employees and administrators | TC-19 |
+| **Password Management** | FR-22 | Self-service password modification (scheduled) and profile password update | TC-17 |
+| **Employee Staff Management** | FR-23, FR-24 | Staff creation, role assignment, deactivation, and immediate session termination | TC-18, TC-29 |
+| **Administrative Reports** | FR-25 | Overview metrics, customer distribution, transaction sums, RFC 4180 CSV export | TC-11, TC-19, TC-31, TC-32 |
+| **Fraud Alert Monitoring** | UC-27 | 100% alert generation policy for triggered rules, alert hydration, severity tagging | TC-39, TC-42 |
+| **Risk Assessment Review** | UC-28 | Post-transaction analytical risk classification (`APPROVED`, `REVIEW_REQUIRED`, `FLAGGED`) | TC-38 |
+| **Fraud Investigation Workflow** | UC-29 | Investigation lifecycle (`UNDER_INVESTIGATION` $	o$ `CONFIRMED_FRAUD` / `FALSE_POSITIVE`) | TC-43 |
+| **Fraud Rule Configuration** | UC-30 | Dynamic rule enabling/disabling, threshold and weight updates with schema validation | TC-44 |
+| **Fraud Analytics Dashboard** | UC-31 | Real-time statistics aggregation, risk distribution, alert breakdown across date windows | TC-45 |
 
 ### 3.2 Non-Functional Features
 
-| Feature | Requirement IDs | Test Cases / Activities |
-|---|---|---|
-| Password storage | NFR-01 | TC-09, TC-17 |
-| Role-based access and data access security | NFR-02, NFR-03 | TC-03, TC-16 |
-| Input validation | NFR-04, NFR-18 | TC-12, TC-04 |
-| Authentication before sensitive operations | NFR-05 | TC-03, TC-13 |
-| Response time | NFR-06, NFR-07 | TC-11 |
-| Balance consistency | NFR-08, NFR-17 | TC-07, TC-10 |
-| Transaction atomicity | NFR-09 | TC-10 |
-| Transaction record accuracy | NFR-10 | TC-05, TC-07, TC-15 |
-| Role-specific navigation | NFR-11, NFR-13 | TC-21 |
-| Meaningful error messages | NFR-12 | TC-02, TC-06, TC-12 |
-| Modular structure and code documentation | NFR-14, NFR-15 | Code review REV-01, REV-02 (Section 4.12) |
-| Unique identifiers | NFR-16 | TC-04, TC-14 |
+| Feature Domain | Requirements | Scope & Verification Highlights | Primary Test Cases / Reviews |
+|---|---|---|---|
+| **Password Security** | NFR-01 | Bcrypt salted hashes (cost 10), unique salts, no plain-text in DB, logs, or responses | TC-09, TC-17 |
+| **Role-Based Access Control** | NFR-02 | Route-level middleware intercepts unauthorized actions with HTTP 403 `AUTH_002` | TC-03, TC-18, TC-28 |
+| **Data Access Isolation** | NFR-03 | Customer horizontal isolation (IDOR defense); staff/admin endpoint protection | TC-16, TC-20, TC-23, TC-27 |
+| **Server-Side Input Validation** | NFR-04, NFR-18 | Rejection of negative amounts, >2 decimals, invalid formats, SQLi payloads | TC-04, TC-12, TC-14 |
+| **Pre-Operation Authentication** | NFR-05 | Rejection of unauthenticated requests with HTTP 401 `AUTH_003` | TC-01, TC-03, TC-13 |
+| **System Performance** | NFR-06, NFR-07 | SQL aggregation query execution under 25ms; SLA compliance benchmarking | TC-11, TC-19 |
+| **Ledger Consistency** | NFR-08, NFR-17 | Zero-sum conservation across transfers; balance equals opening + credits - debits | TC-07, TC-10, TC-25 |
+| **Transaction Atomicity** | NFR-09 | Full InnoDB rollback on mid-transaction failure; atomic outbox event staging | TC-10, TC-39 |
+| **Audit Ledger Accuracy** | NFR-10 | Append-only immutability; exactly one record per cash event, two per transfer | TC-05, TC-07, TC-15, TC-28 |
+| **Role-Specific Navigation** | NFR-11, NFR-13 | Role-adapted navigation menus; core actions accessible within $\le$ 3 clicks | TC-21 (Manual UI Walkthrough) |
+| **Safe Error Reporting** | NFR-12 | Standardized JSON envelopes (`AUTH_xxx`, `VAL_xxx`, `TXN_xxx`) without stack traces | TC-02, TC-06, TC-12 |
+| **Architecture & Code Quality** | NFR-14, NFR-15 | Modular service layers, consistent naming, JSDoc annotations, Oxlint compliance | REV-01, REV-02 |
+| **Unique Identifiers** | NFR-16 | Collision-resistant formatting for accounts (`ACC-...`) and transactions (`TXN-...`) | TC-04, TC-14, TC-18, REV-03 |
 
 ### 3.3 Features Not to be Tested
 
-| Feature | Reason |
+| Feature | Justification |
 |---|---|
-| UPI, payment gateway, card processing, loans, inter-bank settlement | Out of scope ([SRS](SRS.md#12-scope)) |
-| High-volume load and stress testing | The prototype is only required to support normal prototype usage (SRS A-02) |
-| External penetration testing | Not required in Phase 1; basic security validation is done instead (Section 5.1) |
-| Browser compatibility beyond the browsers listed in Section 5 | Limited academic resources |
+| **External Payment Gateways & UPI** | Out of project scope as an internal core banking prototype ([SRS Section 1.2](SRS.md#12-scope)). |
+| **Credit Cards, Loans & Forex** | Deferred to subsequent development phases. |
+| **High-Volume Multi-Node Concurrency** | Prototype runs on local single-node instance; high-throughput distributed stress testing is excluded. |
+| **Automated Frontend UI Browser Automation** | `frontend/package.json` contains no browser automation framework (e.g. Playwright or Cypress); UI verification is performed via static analysis (`oxlint`), bundle checks (`vite build`), and structured manual browser walkthroughs (`TC-21`). |
 
 ---
 
 ## 4. Test Approach
 
-Testing follows a layered verification strategy across the three architectural tiers:
-the **React frontend**, the **Node.js/Express backend API**, and the **MySQL database**.
-
-> **Note on Execution Status:** Testing is conducted incrementally across project sprints.
-> In Sprint 1 (Foundation & Authentication), the application structure, MySQL schema, API health diagnostics,
-> user login, session management, and server-side RBAC middleware were implemented and verified with 26 automated
-> tests and browser validation. Corresponding test cases (TC-01, TC-02, TC-09, TC-13) and reviews (REV-01, REV-02, REV-03)
-> have been executed and marked **Passed**. Test cases for pending functional modules (Customer, Account,
-> Transaction, Employee Admin, Reporting) remain in the **Pending Implementation** state. Load performance testing (TC-11)
-> remains in the **Not Executed** state until the database is loaded with target scale fixtures.
+Testing follows a layered, automated-first verification approach across the React frontend, Node.js/Express backend API, MySQL relational database, and MongoDB document store.
 
 ### 4.1 Frontend Testing (React with Vite)
-
-Frontend testing verifies the user interface components and client-side behavior:
-
-1. **Component Rendering & State Management:** Verify that React components render the expected forms, controls, tables, and dashboards for each user role without errors.
-2. **Client-Side Input Validation:** Verify that basic client-side form validation (e.g. required fields, valid email syntax, positive numeric amounts) triggers clear user guidance before form submission.
-3. **Role-Specific Views and Navigation:** Verify that the navigation menu renders strictly role-permitted actions (NFR-11) and that all permitted core features are accessible within at most 3 navigation steps (NFR-13).
-4. **API Integration & Error Display:** Verify that asynchronous HTTP requests correctly handle response payloads, loading states, and error responses, displaying safe user-friendly messages without exposing system internals (NFR-12).
+- **Static Analysis & Linting:** Executed via `npm run lint` (`oxlint`) across all React components, verifying syntax, prop types, unused variables, and code hygiene.
+- **Bundle Compilation:** Executed via `npm run build` (`vite build`), confirming error-free TypeScript/JSX compilation, asset resolution, and tree-shaking.
+- **Manual UI Walkthroughs:** Structured manual verification ([TC-21](test_cases.md#tc-21--role-specific-ui-navigation--accessibility)) validating that the navigation bar dynamically renders role-specific menus, isolates unauthorized views, and delivers primary actions within $\le$ 3 clicks.
+- *Note:* Automated UI testing (Vitest / Playwright) is not configured in the repository; documentation strictly avoids claiming automated frontend UI execution.
 
 ### 4.2 Backend & REST API Testing (Node.js with Express)
+- **Test Harness:** Built on Node.js native test runner (`node:test`) and Supertest (`^7.0.0`), running with `--test-concurrency=1` to guarantee isolated test execution without cross-test database collisions.
+- **Code Coverage:** Measured via Node.js v24 native coverage tooling (`node --test --experimental-test-coverage`), providing file-by-file line and branch coverage metrics.
+- **Integration Test Execution:** 28 automated integration test suites verify endpoints across HTTP status codes, structured response envelopes, and session cookie lifecycle.
 
-Backend testing verifies the Express application layer independently of the UI:
+### 4.3 Database Interaction & Persistence Testing (MySQL & MongoDB)
+- **MySQL InnoDB Engine:** Verifies parameterized SQL queries, foreign key constraints, `CHECK (balance >= 0)` constraints, and row-level locking (`SELECT ... FOR UPDATE`).
+- **MongoDB Document Engine:** Verifies schema validation (BSON types, required fields, enum boundaries), compound indexes for fast filtering, and MongoDB aggregation pipelines.
 
-1. **Endpoint Routing & Payloads:** Call planned REST endpoints directly using an API client (such as Postman or curl) or automated HTTP test utilities (e.g., Supertest), verifying HTTP status codes and structured JSON response schemas (Section 9 of [Architecture Specification](architecture_design.md#9-api-design)).
-2. **Authentication & Session Lifecycle:** Test login (`POST /api/auth/login`), password validation against salted hashes, session creation, session invalidation on logout (`POST /api/auth/logout`), session expiry after inactivity, and rejection of protected calls without a valid session (`AUTH_003`).
-3. **Role-Based Authorization (RBAC):** Verify that Express authorization middleware intercepts and denies unauthorized role requests with `AUTH_002` across every protected route.
-4. **Error Handling Middleware:** Verify that the central Express error-handling middleware intercepts thrown exceptions and returns standardized error codes without stack traces or SQL syntax (NFR-12).
+### 4.4 Authorization, Privilege Boundaries & Data Isolation
+- **Role Barriers:** Verifies that Express middleware (`requireAuth`, `requireRole`) intercepts unauthorized role attempts with HTTP 403 `AUTH_002` across Customer, Employee, and Administrator boundaries.
+- **Horizontal Data Isolation (IDOR Defense):** Dedicated test suite (`customerAccountIsolation.test.js`) verifies that customers cannot query or transact upon other customers' accounts.
+- **Diagnostics Restriction:** Dedicated tests (`customerProfileSecurity.test.js`) verify that internal diagnostic routes (`/api/health/system`, `/api/diagnostics`) are accessible strictly to Administrators.
 
-### 4.3 Database Interaction & Persistence Testing (MySQL)
+### 4.5 Financial Ledger Integrity & ACID Concurrency
+- **Atomicity & Consistency:** Deposits, withdrawals, and transfers commit ledger records and balance changes atomically inside a single database transaction. Mid-transaction failures trigger clean rollbacks ([TC-10](test_cases.md#tc-10--failed-transaction-atomicity--rollback-guarantees)).
+- **Deadlock Prevention:** Multi-account transfers sort account IDs in ascending alphanumeric order before acquiring row locks (`SELECT ... FOR UPDATE`), eliminating circular lock deadlocks.
 
-Database testing verifies direct interactions between the Node.js Data Access Layer and the MySQL database:
+### 4.6 Asynchronous Outbox Worker & Distributed Leasing Testing
+- **Atomic Outbox Staging:** Verifies that banking transactions atomically insert an event into the MySQL `fraud_outbox` table in the same transaction as the ledger record ([TC-39](test_cases.md#tc-39--transactional-outbox-atomic-staging--mysql-state-preservation)).
+- **Distributed Leasing:** Tests verify that the worker claims batches using `FOR UPDATE SKIP LOCKED`, sets a 60-second lease, periodically issues 20-second heartbeat updates, and reclaims stale abandoned leases ([TC-40](test_cases.md#tc-40--outbox-polling-worker-leasing-heartbeat--stale-recovery)).
+- **Exponential Retry Backoff:** Verifies that transient failures increment retry count, apply exponential backoff delays, and transition events to `FAILED` with captured diagnostics upon reaching max retries ([TC-41](test_cases.md#tc-41--outbox-worker-exponential-retry-backoff--failure-capture)).
 
-1. **Parameterized Queries:** Verify through code inspection and dynamic testing that all database operations use parameterized queries, ensuring that user input is treated strictly as data parameters to help prevent SQL injection when used correctly (NFR-04, SV-06).
-2. **Schema & Constraint Validation:** Verify that MySQL primary keys, foreign keys, unique constraints (account numbers, usernames, transaction references), NOT NULL constraints, and `CHECK (balance >= 0)` prevent corrupt or duplicate records from being stored (NFR-16, NFR-18, REV-03).
-3. **Connection Management:** Verify connection pool initialization, error recovery, and proper release of client connections back to the pool after query execution.
+### 4.7 Rule-Driven Fraud Detection Engine & Analytical Risk Assessment Testing
+- **Rule Verification:** Verifies all 4 analytical rules:
+  1. `HIGH_AMOUNT`: Strict inequality (`amount > threshold_paise`) using integer paise precision ([TC-34](test_cases.md#tc-34--fraud-detection-rule-engine-high_amount-evaluation)).
+  2. `HIGH_VELOCITY`: Sliding-window counting across all debits and credits on the account ([TC-35](test_cases.md#tc-35--fraud-detection-rule-engine-high_velocity-evaluation)).
+  3. `NEW_BENEFICIARY`: Zero prior completed transfers to recipient account ([TC-36](test_cases.md#tc-36--fraud-detection-rule-engine-new_beneficiary-evaluation)).
+  4. `UNUSUAL_HOUR`: Localized Asia/Kolkata timezone night-window evaluation (default 23:00–06:00) ([TC-37](test_cases.md#tc-37--fraud-detection-rule-engine-unusual_hour-evaluation)).
+- **Analytical Assessment Decoupling:** Verifies that risk scores (0–100) and classifications (`APPROVED`, `REVIEW_REQUIRED`, `FLAGGED`) are recorded in MongoDB as post-transaction analytical assessments and do not alter or reverse banking transactions ([TC-38](test_cases.md#tc-38--fraud-risk-scoring-weight-calibration--analytical-classification)).
 
-### 4.4 Authorization & Input Validation Testing
+### 4.8 Fraud Case Management & Dashboard Analytics Testing
+- **Alert Generation Guarantee:** Verifies that 100% of transactions triggering rules produce open alerts in MongoDB ([TC-42](test_cases.md#tc-42--fraud-alert-generation-policy-guarantee)).
+- **Investigation State Machine:** Verifies case lifecycle transitions (`UNDER_INVESTIGATION` $	o$ `CONFIRMED_FRAUD` / `FALSE_POSITIVE` / `RESOLVED_NO_ACTION`) and audit notes ([TC-43](test_cases.md#tc-43--fraud-investigation-lifecycle-management--state-machine)).
+- **Dynamic Rule Reconfiguration:** Verifies administrative updating of rule thresholds, weights, and enabled flags with input schema validation ([TC-44](test_cases.md#tc-44--fraud-dynamic-rule-configuration--threshold-management)).
+- **Analytics Aggregations:** Verifies dashboard metric calculations matching MongoDB document pipelines ([TC-45](test_cases.md#tc-45--fraud-analytics--aggregations-dashboard)).
 
-Validation and authorization testing ensures that security controls cannot be bypassed:
+### 4.9 Integration & End-to-End Regression Testing
+- **Cross-Subsystem Pipeline:** Comprehensive 12-point end-to-end regression test suite (`tests/fraudRegressionDebugging.test.js`, [TC-46](test_cases.md#tc-46--end-to-end-banking-to-fraud-integration-regression)) validating the complete flow: Login $	o$ High-value transfer $	o$ MySQL balance debit/credit $	o$ Outbox row staged $	o$ Worker polls $	o$ Rule engine evaluation $	o$ MongoDB assessment/alert created $	o$ Dashboard analytics updated $	o$ Administrator manages case.
 
-1. **Server-Side Input Validation:** Submit empty strings, boundary values, malformed data types, overlong strings, and SQL injection strings (`' OR '1'='1`) to verify rejection with `VAL_001` before reaching business services (NFR-04, NFR-18).
-2. **Customer Data Ownership:** Verify horizontal privilege separation (SV-09, TC-16): when Customer C1 requests data or transactions belonging to Customer C2, the backend rejects the request with `AUTH_002` and returns no data.
-3. **Privilege Escalation Prevention:** Verify vertical separation: ensure Customer and Employee users cannot access administrative endpoints (`POST /api/employees`, `GET /api/reports/summary`).
+### 4.10 Code Reviews & Architectural Inspections
 
-### 4.5 Financial Transaction Integrity & Concurrency Testing
-
-Financial operations require strict ACID guarantees:
-
-1. **Atomicity & Consistency:** Test deposits (TC-05), withdrawals (TC-06, TC-15), and fund transfers (TC-07) to verify that balance updates and transaction records (`BANK_TRANSACTION`) are committed together inside a single database transaction. If any failure occurs, the transaction rolls back completely and no balance is altered (NFR-08, NFR-09, NFR-17).
-2. **Concurrency & Row-Level Locking:** Test concurrent operations on the same account to verify that `SELECT ... FOR UPDATE` locks account rows. Verify that fund transfers lock accounts in ascending ID order to prevent deadlocks.
-3. **Duplicate Processing Prevention:** Verify that re-submitting a transfer or deposit request does not result in duplicate debits or duplicate transaction records.
-4. **Account Status Enforcement:** Verify that accounts in FROZEN or INACTIVE status reject all deposits, withdrawals, and transfers with `ACC_001` before any balance change is executed (FR-11, TC-08, SV-08).
-
-### 4.6 Integration Testing
-
-Integration tests verify that components work together across tiers:
-- **React UI → Express Backend:** HTTP requests carry appropriate headers/session credentials, and API responses update the React component tree correctly.
-- **Express Backend → Data Access Layer → MySQL:** Service operations properly translate into parameterized SQL queries and database transactions.
-- **Cross-Service Dependencies:** Transaction Service coordinates with Account Service for ownership and status checks before invoking the Data Access Layer.
-
-Modules are verified independently first, then integrated in sequence: Authentication, Customer, Account, Transaction, Employee Administration, and Reporting.
-
-### 4.7 Validation Testing (End-to-End)
-
-Validation testing confirms that the complete system meets user needs across all three roles. Each actor's main use cases from [Actors and Use Cases](actors_usecases.md) are run end to end through the React UI and Express backend. For example, an employee registers a customer, creates an account and deposits money, and then the customer logs in, transfers funds and views the history.
-
-### 4.8 Negative Testing
-
-Every major operation is also tested with invalid or unauthorized actions: wrong passwords, missing fields, negative and zero amounts, amounts above the balance, frozen and inactive accounts, non-existent accounts, and access by the wrong role. The expected result is always a clear rejection (NFR-12) with **no change to stored data**.
-
-### 4.9 Security Testing
-
-Security testing follows the checklist in [Section 5.1](#51-security-validation). It covers authentication, authorization, password storage, input validation, session handling, account status restrictions, and data confidentiality.
-
-### 4.10 Performance Testing
-
-Response times are measured with the browser developer tools (Network tab) or an API benchmark client while up to 10 users are active on the test environment (SRS A-02). Each measured operation is repeated 20 times, and the requirement is met if at most 1 of the 20 repetitions exceeds the limit (NFR-06, NFR-07).
-
-### 4.11 Regression Testing
-
-After each defect fix, the failed test case is repeated. The related high-priority test cases (TC-01, TC-03, TC-05, TC-07 and TC-10) are also repeated to confirm that nothing else was broken.
-
-### 4.12 Reviews and Inspections
-
-Some requirements are verified by inspection and review rather than dynamic execution:
-
-| Review ID | Activity | Requirement | Review Date | Status | Findings / Evidence |
-|---|---|---|---|---|---|
-| REV-01 | Review the source code structure to confirm separate modules for authentication, customer, account, transaction, employee administration and reporting | NFR-14 | 2026-10-22 | **Passed** | Inspected project layout. Confirmed modular three-tier separation: `frontend/` (React SPA components, CSS tokens, centralized API client), `backend/` (Express route modules, security middleware, DB pool, unified environment loader), and `database/` (DDL schema, baseline seed fixtures, initialization script). Modules interact cleanly across API contracts. |
-| REV-02 | Review source code for the documented naming convention and comments on public business-logic functions | NFR-15 | 2026-10-22 | **Passed** | Inspected codebase naming conventions. Standard camelCase applied for functions/variables, PascalCase for React components, UPPER_SNAKE_CASE for constants. All routes, controllers, and utility functions feature structured docstrings documenting purpose, parameters, and return types. Frontend linting (`oxlint`) passed with 0 errors and 0 warnings. |
-| REV-03 | Inspect the database schema for primary keys, unique constraints, foreign keys, and CHECK constraints | NFR-16, NFR-18 | 2026-10-22 | **Passed** | Inspected `database/schema.sql` and initialized live MySQL schema via `npm run db:init:seed`. Verified: `users` PK `user_id` and UK `username`; `customers` PK `customer_id` and UK/FK `user_id`; `employees` PK `employee_id` and UK/FK `user_id`; `accounts` PK `account_id`, UK `account_number`, FK `customer_id`, and `CHECK (balance >= 0.00)`; `bank_transactions` PK `transaction_id`, UK `transaction_ref`, FKs to accounts/users, and `CHECK (amount > 0.00)`. |
+| Review ID | Target Scope | Focus Area | Status | Evidence |
+|---|---|---|---|---|
+| **REV-01** | Modular Architecture | Separation of routing, service, validation, and data access layers | **Passed** | Verified against [Architecture Specification](architecture_design.md#4-component-architecture); clear controller-service-DAL separation. |
+| **REV-02** | Code Quality & Hygiene | Variable naming conventions, error envelopes, Oxlint rules, JSDoc | **Passed** | Verified via `npm run lint` (`oxlint`) with zero syntax or stylistic errors. |
+| **REV-03** | Database Schema Integrity | Primary keys, foreign keys, constraints, and MongoDB JSON Schema | **Passed** | Verified via MySQL schema inspection and `mongoFoundation.test.js`. |
 
 ---
 
-## 5. Test Environment and Validation
+## 5. Test Environment and Security Validation
 
-**Test environment**
+**Physical & Software Test Environment**
 
-| Item | Environment |
+| Environment Parameter | Specification |
 |---|---|
-| Browser / client | Latest Google Chrome, plus one of Mozilla Firefox or Microsoft Edge, running the React single-page application built with Vite |
-| Application server / backend | Node.js runtime executing the Express backend application server listening on local HTTP port ([SRS](SRS.md#25-design-and-implementation-constraints), C-08) |
-| Database | MySQL Community Edition (InnoDB storage engine supporting ACID transactions), running locally on default port 3306 |
-| Local development environment | Team laptops or lab machines (Windows, macOS or Linux), Visual Studio Code, Git and GitHub |
-| Supporting tools | Browser developer tools (Network tab, console), API client such as Postman or curl (direct REST API calls), database client such as MySQL Workbench (schema and data inspection), Node.js native test runner (`node:test`) and Supertest for automated integration tests, Oxlint for frontend linting, and Vite for frontend bundling |
+| **Client / Browser** | Google Chrome (latest), Mozilla Firefox (latest), Microsoft Edge (latest) |
+| **Application Runtime** | Node.js v24.16.0 (supporting native test runner and `--experimental-test-coverage`) |
+| **Relational Datastore** | MySQL Community Edition 8.x (InnoDB engine with ACID transaction isolation) on port 3306 |
+| **Document Datastore** | MongoDB 6.x / 7.x Community Edition (supporting JSON Schema validators and compound indexes) on port 27017 |
+| **Operating System** | Microsoft Windows 11 / Linux (Ubuntu 22.04 LTS / 24.04 LTS) |
+| **Test Libraries** | Native Node.js `node:test`, Supertest `^7.0.0`, Oxlint (frontend linter), Vite 5 (frontend bundler) |
 
-**Test data**
+**Baseline Test Data Fixtures**
 
-Only dummy data is used ([Feasibility Study](feasibility_study.md#6-legal-and-ethical-feasibility)).
-Unless a test case states otherwise, the database is reset to the following
-baseline **before each test case**, so that test cases do not depend on each
-other:
+Before each integration test suite executes, the test database is reset to a deterministic baseline state:
 
-| Data Item | Details |
-|---|---|
-| Customer `C1` | Login `test.customer1`; owns account **ACC-T1** (Active, balance 10,000.00) and account **ACC-T4** (Inactive, balance 1,000.00) |
-| Customer `C2` | Login `test.customer2`; owns account **ACC-T2** (Active, balance 5,000.00) and account **ACC-T3** (Frozen, balance 2,000.00) |
-| Bank Employee `E1` | Login `test.employee1`; active |
-| Bank Employee `E2` | Login `test.employee2`; active (used for the deactivation test) |
-| Administrator `A1` | Login `test.admin1`; active |
-| Passwords | Standard local test password `Password123!` used across dummy test accounts. Stored in `database/seed.sql` as salted bcrypt hashes (`$2b$10$...`) with distinct random salts for each user. In test specifications it is written as `<valid password>`. |
+| Fixture ID | Entity Type | Details & Preconditions |
+|---|---|---|
+| **`C1`** | Customer | Username `test.customer1`; owns **ACC-T1** (Active, balance 10,000.00 INR) and **ACC-T4** (Inactive, balance 1,000.00 INR). |
+| **`C2`** | Customer | Username `test.customer2`; owns **ACC-T2** (Active, balance 5,000.00 INR) and **ACC-T3** (Frozen, balance 2,000.00 INR). |
+| **`E1`** | Employee | Username `test.employee1`; active staff member with banking permissions. |
+| **`E2`** | Employee | Username `test.employee2`; active staff member used for deactivation tests. |
+| **`A1`** | Administrator | Username `test.admin1`; active administrator with full administrative access. |
+| **Passwords** | Credentials | Standard test password `Password123!` hashed via bcrypt cost 10 (`$2b$10$...`) with unique salts. |
+| **Fraud Rules** | MongoDB Rules | 4 baseline rules in `fraud_rules`: HIGH_AMOUNT (threshold 200,000 INR, weight 40), HIGH_VELOCITY (5 tx / 60 min, weight 30), NEW_BENEFICIARY (weight 20), UNUSUAL_HOUR (23:00–06:00, weight 15). |
 
-All amounts are in INR with two decimal places.
+### 5.1 Security Validation (SV-01 to SV-10)
 
-### 5.1 Security Validation
+All 10 security validation checks defined in [SRS Section 5.2](SRS.md#52-security-requirements) have been executed and verified against automated integration test suites:
 
-This section defines the security checks that must pass before the system is
-accepted. Each check maps to a security requirement in the
-[SRS](SRS.md#52-security-requirements) and to the test case that performs it.
-
-| Check ID | Security Area | Validation Method | Expected Result | Requirement | Test Case | Status | Verification Evidence |
-|---|---|---|---|---|---|---|---|
-| SV-01 | Login authentication | Log in as each role with valid credentials | Login succeeds and a session is created for the correct role | FR-01, NFR-05 | TC-01 | **Passed** | Verified on 2026-10-22 via `auth.test.js` Scenario 1 and frontend browser login. HTTP-only `bms.sid` session established. |
-| SV-02 | Invalid credentials | Log in with a wrong password, an unknown username and an inactive user | All three are rejected with the same generic message (`AUTH_001`), which does not reveal whether the username exists | FR-01, FR-24, NFR-03, NFR-12 | TC-02, TC-18 | **Passed** | Verified on 2026-10-22 via `auth.test.js` Scenarios 2, 3, 5. Constant-time dummy bcrypt compare mitigates timing enumeration. |
-| SV-03 | Role-based authorization | While logged in as a Customer, open employee and administrator functions from the UI and by entering their URLs | Access is denied with `AUTH_002`, and no data is shown or changed | FR-03, NFR-02 | TC-03 | **Pending Implementation (Middleware Verified)** | `requireRole` middleware verified with HTTP 403 `AUTH_002` in `auth.test.js` Scenarios 8 & 9. Banking page route enforcement pending Sprint 2. |
-| SV-04 | Unauthorized URL / API access | Call protected API operations without a session and after logout | Requests are rejected with `AUTH_003`, and no data is returned | NFR-05, FR-02 | TC-03, TC-13 | **Passed** | Verified on 2026-10-22 via `auth.test.js` Scenarios 6, 7, 10. `GET /api/auth/me` and `/protected` reject unauthenticated and post-logout requests with 401 `AUTH_003`. |
-| SV-05 | Password storage | Inspect the user table; search application logs for the test password | Only salted hashes are stored; the same password gives different hashes for different users; no plain-text password appears in logs or responses | NFR-01 | TC-09, TC-17 | **Passed** | Verified on 2026-10-22 via `auth.test.js` Scenario 12 and MySQL inspection. Bcrypt hashes (`$2b$10$...`) have distinct salts; no secrets leaked. |
-| SV-06 | Input validation | Submit empty fields, negative, zero and non-numeric amounts, overlong text and SQL-like text such as `' OR '1'='1` | All are rejected with `VAL_001` before processing; no data changes; no SQL error is shown | NFR-04, NFR-18 | TC-12 | **Pending Implementation (Auth Input Verified)** | Authentication empty/whitespace input rejected with HTTP 400 `VAL_001` in `auth.test.js` Scenario 4 & 13. Financial transaction validation pending Sprint 2. |
-| SV-07 | Access to protected operations | Attempt a deposit, withdrawal and transfer without being logged in | All are rejected with `AUTH_003` | NFR-05 | TC-03 | **Passed** | Verified on 2026-10-22 via `auth.test.js` Scenario 10. `requireAuth` middleware rejects unauthenticated access with HTTP 401 `AUTH_003`. |
-| SV-08 | Account status restrictions | Deposit to, withdraw from and transfer to or from a frozen and an inactive account | All are rejected with `ACC_001`; balances unchanged; no transaction record | FR-11 | TC-08 | **Pending Implementation** | Account status financial restrictions scheduled for Sprint 2 transaction engine. |
-| SV-09 | Data confidentiality | Logged in as Customer C1, request C2's account ACC-T2 and its transaction history by changing the ID in the URL or request | Access is denied; none of C2's data is returned | NFR-03 | TC-16 | **Pending Implementation** | Customer data ownership validation scheduled for Sprint 2 account/transaction endpoints. |
-| SV-10 | Safe error responses | Trigger invalid operations and a forced internal error | Messages give the reason but contain no stack trace, SQL, table names or password hashes | NFR-12 | TC-10, TC-12 | **Passed** | Verified on 2026-10-22 via `auth.test.js` Scenario 13 and `errorHandler.js`. Structured JSON envelopes returned without leaking internal details. |
-
-**Security validation pass criterion:** all checks SV-01 to SV-10 pass before final project release. Currently, foundational security checks (SV-01, SV-02, SV-04, SV-05, SV-07, SV-10) **Pass** with automated evidence. Domain-specific checks (SV-03, SV-06, SV-08, SV-09) are partially verified or pending Sprint 2 banking workflows. Any failed security check is recorded as a **Critical** defect and blocks the exit criteria in Section 6.
+| Check ID | Security Objective | Validation Method | Expected Result | Requirement | Verifying Test Suite | Status |
+|---|---|---|---|---|---|---|
+| **SV-01** | Login Authentication | Authenticate valid credentials for Customer, Employee, Admin | HTTP 200, authenticated session cookie issued | FR-01, NFR-05 | `tests/auth.test.js` (Scenario 1) | **Passed** |
+| **SV-02** | Invalid Credential Defense | Attempt login with wrong password, bad username, inactive user | Generic HTTP 401 `AUTH_001`, constant-time hashing | FR-01, FR-24, NFR-03, NFR-12 | `tests/auth.test.js` (Scenarios 2–5) | **Passed** |
+| **SV-03** | Role-Based Access Control | Attempt cross-role operations across all 3 roles | HTTP 403 `AUTH_002` returned, zero state modification | FR-03, NFR-02 | `tests/auth.test.js`, `tests/employees.test.js`, `tests/transfers.test.js`, `tests/fraudDashboard.test.js` | **Passed** |
+| **SV-04** | Unauthenticated Access | Call protected endpoints without valid session cookie | HTTP 401 `AUTH_003` returned | NFR-05, FR-02 | `tests/auth.test.js` (Scenarios 6–10) | **Passed** |
+| **SV-05** | Password Storage Security | Inspect database records, responses, and log streams | Salted bcrypt hashes (`$2b$10$...`), zero plain text | NFR-01 | `tests/auth.test.js` (Scenario 12) | **Passed** |
+| **SV-06** | Server Input Validation | Submit negative amounts, fractions, invalid dates, SQLi payloads | HTTP 400 `VAL_001` or `TXN_002` returned | NFR-04, NFR-18 | `tests/auth.test.js`, `tests/accounts.test.js`, `tests/transactions.test.js`, `tests/customers.test.js` | **Passed** |
+| **SV-07** | Protected Ledger Operations | Attempt deposit, withdrawal, or transfer without session | HTTP 401 `AUTH_003` returned | NFR-05 | `tests/transfers.test.js`, `tests/transactions.test.js` | **Passed** |
+| **SV-08** | Account Status Enforcement | Attempt transactions on FROZEN or INACTIVE accounts | HTTP 409 `ACC_001` returned, balances unchanged | FR-11 | `tests/accounts.test.js`, `tests/transactions.test.js` | **Passed** |
+| **SV-09** | Horizontal Customer Isolation | Customer A queries or transacts on Customer B's account (IDOR) | HTTP 403 `AUTH_002` returned, zero data leakage | NFR-01, NFR-03 | `tests/customerAccountIsolation.test.js` (25 tests) | **Passed** |
+| **SV-10** | Safe Structured Errors | Force validation, auth, and database internal errors | Standardized JSON envelopes, zero stack traces/SQL leaked | NFR-12 | `tests/health.test.js`, `tests/auth.test.js`, `tests/transactions.test.js` | **Passed** |
 
 ### 5.2 Data Integrity Validation
-
-After completing TC-05, TC-07, TC-10 and TC-15, the tester checks the
-following in the database:
-
-1. For each test account, the stored balance equals the opening balance plus
-   credits minus debits in its transaction records (NFR-08, NFR-17).
-2. Every transaction ID is unique (FR-18, NFR-16).
-3. No transaction record exists for any rejected or failed operation (NFR-09,
-   NFR-10).
+Automated database integrity assertions executed across all financial suites confirm:
+1. **Conservation of Balance:** In every completed fund transfer, the sender balance decreases by the exact transfer amount, and the recipient balance increases by the exact transfer amount ($\Delta 	ext{Sender} + \Delta 	ext{Receiver} = 0$).
+2. **Identifier Uniqueness:** Every account number (`ACC-...`) and transaction reference (`TXN-...`) satisfies global unique database constraints.
+3. **Absence of Orphan Records:** When transactions fail or are rejected, zero ledger records, zero partial debits, and zero outbox events persist in the database.
 
 ---
 
 ## 6. Entry and Exit Criteria
 
 ### 6.1 Entry Criteria
-
-Testing of a module can begin when:
-
-1. The SRS, architecture and design specification and this test plan have been
-   reviewed and baselined.
-2. The module is implemented and committed to the GitHub repository.
-3. The test environment (Section 5) is installed and the baseline test data is
-   loaded.
-4. The module builds and starts without errors (smoke test: the login page
-   opens and a test user can log in).
+Formal testing execution commenced when:
+1. SRS, Architecture Specification, and Test Plan were aligned and baselined.
+2. MySQL schema migrations and MongoDB collections were initialized with schemas and indexes.
+3. Application build and lint checks (`oxlint`, `vite build`) passed with zero errors.
+4. Test runner harness and automated integration test suites were configured in `backend/package.json`.
 
 ### 6.2 Exit Criteria
-
-A test phase is complete when:
-
-1. All test cases TC-01 to TC-21 and reviews REV-01 to REV-03 have been
-   executed.
-2. All security checks SV-01 to SV-10 pass.
-3. At least 90% of test cases pass, and every high-priority test case
-   (TC-01, TC-02, TC-03, TC-05, TC-06, TC-07, TC-08, TC-09, TC-10) passes.
-4. There are no open Critical or High severity defects.
-5. Test results, the defect log and the traceability matrix are updated.
+The formal testing phase is concluded when:
+1. All 46 test cases (`TC-01` to `TC-46`) and architectural code reviews (`REV-01` to `REV-03`) are executed or formally accounted for.
+2. All 10 security validation checks (`SV-01` to `SV-10`) pass with automated evidence.
+3. Backend automated integration test suite achieves a **100% pass rate** (630 out of 630 automated tests passing).
+4. No unresolved Critical or High severity defects exist in the codebase.
+5. Bidirectional traceability in the [RTM](rtm.md) maps 100% of functional requirements (`FR-01` to `FR-25`) and non-functional requirements (`NFR-01` to `NFR-18`).
 
 ### 6.3 Suspension and Resumption Criteria
+- **Suspension:** Testing is suspended if database migration scripts fail, if the MySQL or MongoDB test service becomes unavailable, or if core authentication crashes preventing test session establishment.
+- **Resumption:** Testing resumes after database connectivity is restored, baseline fixtures are reseeded, and health check endpoint `GET /api/health` returns HTTP 200 OK.
 
-Testing is **suspended** if the login function fails (most tests depend on
-it), if the test database cannot be reset, or if more than 30% of test cases in
-one run fail because of the same defect. Testing **resumes** after the
-blocking defect is fixed and the smoke test passes.
+### 6.4 Defect Severity Classification
 
-### 6.4 Defect Severity
-
-| Severity | Meaning | Example |
-|---|---|---|
-| Critical | Security failure, data loss or incorrect balance | Transfer debits the sender but does not credit the receiver |
-| High | Core function does not work and there is no workaround | Deposit cannot be performed |
-| Medium | Function works incorrectly but has a workaround | Report total is wrong but the individual records are correct |
-| Low | Cosmetic or wording issue | Spelling mistake in an error message |
+| Severity Level | Definition | Impact on Release | Example from Project |
+|---|---|---|---|
+| **Critical** | Security vulnerability, data loss, balance inconsistency, or crash. | Release Blocker | Balance alteration during a failed transfer; customer IDOR bypass. |
+| **High** | Core business workflow failure without a viable workaround. | Release Blocker | Outbox worker fails to claim events; deposit endpoint throws unhandled exception. |
+| **Medium** | Functional defect with an available operational workaround. | Review Required | Self-service password change route pending; CSV report column ordering deviation. |
+| **Low** | Minor cosmetic defect, formatting inconsistency, or typo. | Non-blocking | Discrepancy in error envelope explanatory text; UI button alignment. |
 
 ---
 
 ## 7. Test Deliverables
 
-| Deliverable | Description |
-|---|---|
-| Test plan | This document |
-| Test cases | TC-01 to TC-21 in Section 8 |
-| Test execution results | The Actual Result and Status fields of each test case, completed during execution, with date and tester |
-| Defect reports | A defect log (GitHub Issues) with ID, test case, steps to reproduce, severity and status |
-| Traceability matrix | Section 9 of this plan and the project [RTM](rtm.md) |
-| Security validation results | Pass or fail result for each check SV-01 to SV-10 in Section 5.1 |
-| Test summary report | Final summary of executed, passed and failed tests and open defects |
+| Deliverable Artifact | Repository Path | Description |
+|---|---|---|
+| **Software Test Plan** | `docs/phase1/test_plan.md` | Master testing strategy, environment, approach, criteria, and execution directory. |
+| **Test Case Specification** | `docs/phase1/test_cases.md` | Authoritative IEEE 829 test case catalog containing detailed specifications for TC-01 to TC-46. |
+| **Requirement Traceability Matrix** | `docs/phase1/rtm.md` | Bidirectional mapping between FRs/NFRs, architecture components, test cases, and statuses. |
+| **Automated Integration Test Suites** | `backend/tests/*.test.js` | 28 automated integration test suites comprising 630 test cases executed via `node:test`. |
+| **Test Execution & Coverage Log** | `docs/phase1/test_execution_report.md` | Formal test run results and Node.js v24 experimental coverage data (prepared post-execution). |
 
 ---
 
-## 8. Test Cases
+## 8. Test Cases & Master Summary
 
-Each test case starts from the baseline test data (Section 5). Any extra data
-a test needs is created in its own preconditions. **Actual Result** and **Status** are completed during execution.
+The detailed specifications for all test cases—including preconditions, exact operational steps, test input vectors, expected outcomes, actual empirical execution evidence, and verification methods—are maintained in the dedicated [Test Case Specification](test_cases.md).
 
-### TC-01 — Valid User Login
+The table below summarizes the master directory of all 46 test cases, resolving historical Sprint 1 contradictions and reflecting the actual execution status of the system:
 
-| Field | Details |
-|---|---|
-| Test Case ID | TC-01 |
-| Requirement ID | FR-01, FR-03, NFR-05 |
-| Use Case ID | UC-01, UC-08, UC-19 |
-| Test Type | Functional, Security |
-| Priority | High |
-| Test Objective | Verify that registered active users of each role can log in with valid credentials and reach their role's dashboard. |
-| Preconditions | Users `test.customer1`, `test.employee1` and `test.admin1` exist and are active. No user is logged in. |
-| Test Steps | 1. Open the login page. 2. Enter username `test.customer1` and its valid password. 3. Click **Login**. 4. Log out. 5. Repeat steps 1–4 for `test.employee1` and `test.admin1`. |
-| Test Data / Input | Username: `test.customer1`, `test.employee1`, `test.admin1`; Password: `<valid password>` for each |
-| Expected Result | Each login succeeds. The Customer sees the customer dashboard, the Employee sees the employee dashboard and the Administrator sees the administrator dashboard. |
-| Actual Result | Executed on 2026-10-22 via automated integration test suite (`tests/auth.test.js`, Scenario 1: customer, employee, and administrator valid logins) and browser verification. All three roles successfully authenticate with HTTP 200, receiving `{ success: true, user: { id, username, fullName, role, ... } }` and establishing an HTTP-only `bms.sid` session cookie. Interactive browser session verified customer dashboard access and session restoration on reload. |
-| Status | Passed |
-
-### TC-02 — Invalid User Login
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-02 |
-| Requirement ID | FR-01, NFR-03, NFR-12 |
-| Use Case ID | UC-01 |
-| Test Type | Functional (negative), Security |
-| Priority | High |
-| Test Objective | Verify that invalid credentials are rejected with a generic message that does not reveal whether the username exists. |
-| Preconditions | User `test.customer1` exists. No user is logged in. |
-| Test Steps | 1. Enter username `test.customer1` with a wrong password and click **Login**. 2. Enter a username that does not exist (`no.such.user`) with any password and click **Login**. 3. Leave both fields empty and click **Login**. |
-| Test Data / Input | Wrong password: `<invalid password>`; unknown username: `no.such.user`; empty fields |
-| Expected Result | Steps 1 and 2 show the same message, "Invalid username or password" (`AUTH_001`), and no session is created. Step 3 shows a "required field" message. No message reveals whether the username exists. |
-| Actual Result | Executed on 2026-10-22 via automated integration test suite (`tests/auth.test.js`, Scenarios 2, 3, 4, 5). Wrong password and non-existent username (`no.such.user`) both return HTTP 401 with generic error envelope `{ success: false, error: { code: 'AUTH_001', message: 'Invalid username or password' } }`, preventing username enumeration via constant-time dummy bcrypt hashing. Empty and whitespace credentials return HTTP 400 with `{ code: 'VAL_001' }`. Inactive user accounts return HTTP 401 `AUTH_001`. |
-| Status | Passed |
-
-### TC-03 — Role-Based Access Control
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-03 |
-| Requirement ID | FR-03, NFR-02, NFR-03, NFR-05 |
-| Use Case ID | UC-10, UC-15, UC-21, UC-26 (role-restricted use cases) |
-| Test Type | Security, Negative |
-| Priority | High |
-| Test Objective | Verify that each role can access only its permitted functions, and that protected operations cannot be performed without logging in. |
-| Preconditions | Baseline test data loaded. |
-| Test Steps | 1. Log in as `test.customer1`. 2. Try to open the Register Customer page (UC-10) by typing its URL. 3. Send a deposit request (`POST /api/accounts/{accountId}/deposits`) for ACC-T1 using the customer's session. 4. Try to open Manage Employee Accounts (UC-21) and Generate Reports (UC-26). 5. Log out, log in as `test.employee1` and try to open Manage Employee Accounts (UC-21). 6. Log out and, with no session, send `GET /api/accounts/{accountId}` for ACC-T1. |
-| Test Data / Input | Customer and employee sessions; URLs and API requests of restricted functions |
-| Expected Result | Steps 2–5: access is denied with "Unauthorized operation" (`AUTH_002`), and the menu does not show these functions. Step 6: the request is rejected with "Authentication required" (`AUTH_003`). No data is shown or changed in any step. |
-| Actual Result | Partially verified on 2026-10-22 at the backend middleware and authentication API level (`tests/auth.test.js`, Scenarios 8, 9, 10). `requireRole` middleware enforces role barriers: Customer access to employee-only route returns HTTP 403 `{ code: 'AUTH_002', message: 'Unauthorized operation for user role' }`. Unauthenticated calls to protected routes return HTTP 401 `{ code: 'AUTH_003', message: 'Authentication required' }`. Full front-end UI route guarding and core banking endpoints (`POST /api/accounts/.../deposits`, `UC-10`, `UC-21`, `UC-26`) remain pending implementation in Sprint 2. |
-| Status | Pending Implementation (Middleware Verified) |
-
-### TC-04 — Register Customer
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-04 |
-| Requirement ID | FR-04, NFR-16, NFR-18 |
-| Use Case ID | UC-10 |
-| Test Type | Functional |
-| Priority | High |
-| Test Objective | Verify that a Bank Employee can register a new customer and that the customer receives a unique customer ID. |
-| Preconditions | Logged in as `test.employee1`. |
-| Test Steps | 1. Open **Register Customer**. 2. Enter all mandatory details. 3. Click **Submit**. 4. Search for the new customer. 5. Repeat steps 1–3 with a second customer. |
-| Test Data / Input | Name: `Test Customer Three`; Date of birth: `2000-01-01`; Phone: `9000000003`; E-mail: `test3@example.com`; Address: `Test Address 3`; Username: `test.customer3`; Password: `Password123!` |
-| Expected Result | A success message shows a new customer ID. The customer can be found by search with the entered details. The two new customers have different customer IDs. |
-| Actual Result | Executed on 2026-10-29 via automated integration test suite (`tests/customers.test.js`, Scenarios 1–10) and React UI (`CustomerManagement.jsx`). Authorized employees and administrators can register customers with mandatory details (`fullName`, `dateOfBirth`, `phone`, `email`, `address`, `username`, `password`), creating linked `users` and `customers` records atomically with bcrypt hashing (cost 10) and returning a unique customer ID. Rejects duplicates, unauthenticated/customer attempts (403 `AUTH_002`), invalid formats (400 `VAL_001`), and privilege escalation. |
-| Status | Passed |
-
-### TC-05 — Successful Deposit
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-05 |
-| Requirement ID | FR-12, FR-18, FR-19, NFR-10 |
-| Use Case ID | UC-15 |
-| Test Type | Functional |
-| Priority | High |
-| Test Objective | Verify that a deposit into an active account increases its balance by the exact amount and creates one transaction record. |
-| Preconditions | Logged in as `test.employee1`. Account is Active with balance 10,000.00. |
-| Test Steps | 1. Open **Deposit Money**. 2. Enter account ID and amount 2,500.00. 3. Click **Submit**. 4. View the account details. 5. View the transaction records for the account. |
-| Test Data / Input | Account: Active test account; Amount: 2,500.00 |
-| Expected Result | A success message shows a transaction ID. The balance is 12,500.00. Exactly one new DEPOSIT record exists with that transaction ID, amount 2,500.00, destination account, and the current date and time. |
-| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/transactions.test.js`, Scenario 1) and React dashboard (`AccountManagement.jsx`). Authorized employee deposits money into active account via `POST /api/transactions/deposit` and `POST /api/accounts/:id/deposits` (201 Created); balance increases by exact amount, and exactly one `DEPOSIT` record is created in `bank_transactions` with unique reference `TXN-DEP-...`. |
-| Status | Passed |
-
-### TC-06 — Withdrawal with Insufficient Balance
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-06 |
-| Requirement ID | FR-14, NFR-12 |
-| Use Case ID | UC-16 |
-| Test Type | Functional (negative) |
-| Priority | High |
-| Test Objective | Verify that a withdrawal greater than the available balance is rejected and the balance does not change. |
-| Preconditions | Logged in as `test.employee1`. Account is Active with balance 10,000.00. |
-| Test Steps | 1. Open **Withdraw Money**. 2. Enter account ID and amount 10,000.01. 3. Click **Submit**. 4. View the account details and transaction records. |
-| Test Data / Input | Account: Active test account; Amount: 10,000.01 (boundary: 0.01 above the balance) |
-| Expected Result | The withdrawal is rejected with "Insufficient balance" (`TXN_001`). The balance remains 10,000.00. No new transaction record is created. |
-| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/transactions.test.js`, Scenario 3). Withdrawal of 10,000.01 against balance of 10,000.00 is rejected with HTTP 422 `{ errorCode: 'TXN_001', message: 'Insufficient balance' }`. Account balance remains 10,000.00, and zero transaction records are created. |
-| Status | Passed |
-
-### TC-07 — Successful Fund Transfer
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-07 |
-| Requirement ID | FR-15, FR-16, FR-17, FR-18, FR-19, NFR-08, NFR-10 |
-| Use Case ID | UC-04 |
-| Test Type | Functional, Integration |
-| Priority | High |
-| Test Objective | Verify that a customer can transfer funds to another valid account, that both balances are updated correctly, and that a transfer above the balance is rejected. |
-| Preconditions | Logged in as `test.customer1`. ACC-T1 balance 10,000.00 (Active); ACC-T2 balance 5,000.00 (Active). |
-| Test Steps | 1. Open **Transfer Funds**. 2. Select source ACC-T1, enter receiver ACC-T2 and amount 1,500.00. 3. Click **Submit**, then confirm. 4. View the ACC-T1 details and transaction history. 5. Log in as `test.customer2` and view the ACC-T2 details. 6. Log in again as `test.customer1` and try to transfer 20,000.00 from ACC-T1 to ACC-T2. |
-| Test Data / Input | Transfer 1: ACC-T1 → ACC-T2, 1,500.00. Transfer 2: ACC-T1 → ACC-T2, 20,000.00 |
-| Expected Result | Transfer 1 succeeds and shows a transaction ID. ACC-T1 balance is 8,500.00 and ACC-T2 balance is 6,500.00. One TRANSFER record exists with both account numbers and amount 1,500.00. Transfer 2 is rejected with "Insufficient balance" (`TXN_001`), and the balances remain 8,500.00 and 6,500.00. |
-| Actual Result | Feature scheduled for Sprint 2 (Transaction Service transfer workflow & two-phase balance update). |
-| Status | Pending Implementation |
-
-### TC-08 — Transaction Attempt on Frozen or Inactive Account
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-08 |
-| Requirement ID | FR-10, FR-11 |
-| Use Case ID | UC-17, UC-04, UC-15, UC-16 |
-| Test Type | Functional (negative), Security |
-| Priority | High |
-| Test Objective | Verify that account status changes take effect and that no financial transaction is allowed on a frozen or inactive account. |
-| Preconditions | ACC-T3 is Frozen (2,000.00); ACC-T4 is Inactive (1,000.00); ACC-T1 is Active (10,000.00). |
-| Test Steps | 1. Log in as `test.employee1` and try to deposit 100.00 into ACC-T3. 2. Try to withdraw 100.00 from ACC-T4. 3. Log in as `test.customer1` and try to transfer 100.00 from ACC-T1 to ACC-T3. 4. Try to transfer 100.00 from ACC-T4 to ACC-T2. 5. Log in as `test.employee1`, unfreeze ACC-T3 (set it to Active), and deposit 100.00 into it. |
-| Test Data / Input | Accounts ACC-T1, ACC-T2, ACC-T3, ACC-T4; Amount: 100.00 |
-| Expected Result | Steps 1–4 are rejected with "Account frozen or inactive" (`ACC_001`), and all balances are unchanged with no transaction records. Step 5: the status changes to Active and the deposit succeeds (ACC-T3 = 2,100.00). |
-| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/accounts.test.js`, Scenarios 4 & 5). Authorized Bank Employee can toggle status between ACTIVE, INACTIVE, and FROZEN via `PATCH /api/accounts/:id/status` (200 OK) with zero effect on balance. Unauthorized roles (Customer, Admin) are rejected with `AUTH_002` (403). `verifyAccountEligibility` confirms active accounts pass, while frozen/inactive accounts throw `ACC_001` (409). Actual deposit/withdrawal endpoints remain pending Issue #8. |
-| Status | Passed (Status Lifecycle & Eligibility Engine Verified) |
-
-### TC-09 — Password Security / Password Storage
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-09 |
-| Requirement ID | NFR-01 |
-| Use Case ID | UC-01, UC-10, UC-21 |
-| Test Type | Security (inspection) |
-| Priority | High |
-| Test Objective | Verify that passwords are stored only as salted one-way hashes and never appear in plain text. |
-| Preconditions | Access to the test database through a database client. Test users exist. |
-| Test Steps | 1. Create two test users with the **same** test password. 2. Open the user table in the database client. 3. Compare the stored password fields of the two users. 4. Search the stored password fields and the application log files for the plain-text test password. 5. Check the login API response for any password or hash field. |
-| Test Data / Input | Two dummy users with the same test password `<shared test password>` |
-| Expected Result | Stored values are hashes, not the password. The two users have **different** stored hash values (salting). The plain-text password is not found in the database, the logs or any response. |
-| Actual Result | Executed on 2026-10-22 via automated test (`tests/auth.test.js`, Scenario 12) and database inspection of `database/seed.sql`. Stored user passwords use bcrypt with cost factor 10 (`$2b$10$...`). Different users sharing the identical test password `Password123!` have distinct salted hashes. Direct inspections confirm plain-text passwords never appear in database records, backend application logs, or API response bodies. |
-| Status | Passed |
-
-### TC-10 — Failed Transaction Atomicity
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-10 |
-| Requirement ID | NFR-09, NFR-17, NFR-12 |
-| Use Case ID | UC-04 |
-| Test Type | Non-functional (reliability), Integration |
-| Priority | High |
-| Test Objective | Verify that a transfer that fails part-way through leaves no partial balance update and no transaction record. |
-| Preconditions | ACC-T1 = 10,000.00, ACC-T2 = 5,000.00. A test-only failure point is available in the test environment (for example, a test setting that makes the transaction-record insert fail, or stopping the database after the debit step while debugging). |
-| Test Steps | 1. Record the balances of ACC-T1 and ACC-T2. 2. Enable the forced failure after the sender debit. 3. As `test.customer1`, transfer 1,000.00 from ACC-T1 to ACC-T2. 4. Disable the forced failure. 5. Check both balances and the transaction records in the database. |
-| Test Data / Input | ACC-T1 → ACC-T2, 1,000.00 |
-| Expected Result | The user sees "Transaction failed" (`TXN_003`) with no technical details. ACC-T1 remains 10,000.00 and ACC-T2 remains 5,000.00. No transaction record exists for the failed transfer. |
-| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/transactions.test.js`, Scenario 8). Simulated mid-transaction failures before/after ledger insertion trigger automatic InnoDB rollback via `withTransaction`, returning HTTP 500 `{ errorCode: 'TXN_003', message: 'Transaction processing failed. Any pending changes were rolled back.' }`. Account balances remain unchanged and zero orphaned ledger records are written. |
-| Status | Passed |
-
-### TC-11 — Response Time Validation
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-11 |
-| Requirement ID | NFR-06, NFR-07 |
-| Use Case ID | UC-01, UC-03, UC-05, UC-04, UC-15 |
-| Test Type | Non-functional (performance) |
-| Priority | Medium |
-| Test Objective | Verify response times under normal prototype usage (up to 10 concurrent users, SRS A-02). |
-| Preconditions | Test environment running with the baseline data plus sample data (about 1,000 customers and 10,000 transactions). Up to 10 testers or scripted clients active. |
-| Test Steps | 1. With browser developer tools open, perform login 20 times and record each response time. 2. Repeat for balance enquiry (view ACC-T1) and viewing transaction history. 3. Perform 20 deposits and 20 transfers of 1.00 and record each response time. |
-| Test Data / Input | Accounts ACC-T1 and ACC-T2; Amount: 1.00 |
-| Expected Result | Login, balance enquiry and transaction history: at most 1 of 20 responses per operation exceeds 3 seconds (NFR-06). Deposits and transfers: at most 1 of 20 exceeds 5 seconds (NFR-07). |
-| Actual Result | Performance load testing planned for later phase with 10 concurrent users and populated volume data (1,000 customers, 10,000 transactions). |
-| Status | Not Executed |
-
-### TC-12 — Invalid Input Rejection
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-12 |
-| Requirement ID | NFR-04, NFR-18, NFR-12 |
-| Use Case ID | UC-10, UC-15, UC-04 |
-| Test Type | Non-functional (security, data integrity), Negative |
-| Priority | High |
-| Test Objective | Verify that invalid input is rejected before processing and that invalid data is never stored. |
-| Preconditions | Logged in as `test.employee1` (steps 1–4) and as `test.customer1` (steps 5–6). |
-| Test Steps | 1. Register a customer with the name field empty. 2. Register a customer with e-mail `not-an-email` and phone `abc`. 3. Deposit amount `-100` into ACC-T1. 4. Deposit amount `0`, then `abc`, then `10.555` into ACC-T1. 5. Transfer from ACC-T1 to receiver `' OR '1'='1`. 6. Transfer 100.00 from ACC-T1 to ACC-T1 (same account). |
-| Test Data / Input | As listed in the steps |
-| Expected Result | Every step is rejected with a field-level error (`VAL_001`, `TXN_002` for amounts, or `TXN_004` for the same account). No customer record, balance or transaction record is created or changed. No SQL error, stack trace or table name is shown. |
-| Actual Result | Partially verified on 2026-10-22 for authentication endpoints (`tests/auth.test.js`, Scenarios 4 & 13). Empty username/password and whitespace payloads are rejected with HTTP 400 `{ code: 'VAL_001', message: 'Username and password are required' }`. SQL injection strings (e.g. `' OR '1'='1`) are safely handled via MySQL parameterized queries and return HTTP 401 `AUTH_001` without SQL syntax errors or schema leakage. Financial amount validation (`TXN_002`, `TXN_004`) and customer field validation are scheduled for Sprint 2. |
-| Status | Pending Implementation (Auth Input Verified) |
-
-### TC-13 — Logout and Session Invalidation
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-13 |
-| Requirement ID | FR-02, NFR-05 |
-| Use Case ID | UC-02, UC-09, UC-20 |
-| Test Type | Functional, Security |
-| Priority | High |
-| Test Objective | Verify that logout ends the session and that protected pages cannot be used afterwards. |
-| Preconditions | Logged in as `test.customer1`, with the ACC-T1 account details page open. |
-| Test Steps | 1. Click **Logout**. 2. Press the browser **Back** button. 3. Refresh the page. 4. Using an API client, repeat the earlier `GET /api/accounts/{accountId}` request with the old session credential. |
-| Test Data / Input | Session of `test.customer1` |
-| Expected Result | Step 1 returns the user to the login page. Steps 2–4 do not show account data; they redirect to login or return "Authentication required" (`AUTH_003`). |
-| Actual Result | Executed on 2026-10-22 via automated test (`tests/auth.test.js`, Scenarios 6 & 7) and browser verification. `POST /api/auth/logout` terminates the session on the server, clears the `bms.sid` session cookie with an expired maxAge/expires header, and subsequent requests with the expired cookie to protected routes (`GET /api/auth/me`, `/protected`) return HTTP 401 `{ code: 'AUTH_003', message: 'Authentication required' }`. |
-| Status | Passed |
-
-### TC-14 — Create Bank Account with Unique Account Number
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-14 |
-| Requirement ID | FR-07, FR-08, NFR-16 |
-| Use Case ID | UC-13 |
-| Test Type | Functional |
-| Priority | High |
-| Test Objective | Verify that an employee can create accounts for a registered customer and that each account gets a unique account number. |
-| Preconditions | Logged in as `test.employee1`. Customer C1 exists. |
-| Test Steps | 1. Open **Create Bank Account**. 2. Select customer C1, choose account type Savings and opening balance 0.00. 3. Click **Submit**. 4. Repeat steps 1–3 two more times. 5. Try to create an account for a customer ID that does not exist. |
-| Test Data / Input | Customer: C1; Type: Savings; Opening balance: 0.00; non-existent customer ID `C9999` |
-| Expected Result | Steps 1–4 create three accounts, each Active, with a different account number that is also different from ACC-T1 to ACC-T4. Step 5 is rejected with "Customer not found" (`CUST_001`). |
-| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/accounts.test.js`, Scenario 1) and React dashboard (`AccountManagement.jsx`). Authorized Bank Employee creates SAVINGS and CURRENT accounts for registered customer C1 via `POST /api/accounts` (201 Created), receiving unique identifiers formatted `ACC-<TYPE>-<8-DIGITS>`. Enforces 0.00 opening balance, rejects non-existent customers with `CUST_001` (404), and blocks unauthorized roles with `AUTH_002` (403). |
-| Status | Passed |
-
-### TC-15 — Successful Withdrawal
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-15 |
-| Requirement ID | FR-13, FR-18, FR-19, NFR-10 |
-| Use Case ID | UC-16 |
-| Test Type | Functional (including boundary value) |
-| Priority | High |
-| Test Objective | Verify that withdrawals up to and including the full balance succeed and are recorded. |
-| Preconditions | Logged in as `test.employee1`. Active test account. |
-| Test Steps | 1. Withdraw 1,000.00 from account. 2. Withdraw the exact remaining balance (boundary test down to 0.00). 3. View the account balance and transaction records. |
-| Test Data / Input | Account: Active test account; Amounts: 1,000.00 and full balance |
-| Expected Result | Both withdrawals succeed with different transaction IDs. The final balance is 0.00. WITHDRAWAL records exist with the correct amounts and null destination account. |
-| Actual Result | Executed on 2026-10-28 via automated integration test suite (`tests/transactions.test.js`, Scenario 2) and React dashboard. Withdrawals of 1,000.00 and boundary full-balance withdrawal down to 0.00 succeed with HTTP 201 Created; balance decreases by exact amount, and corresponding `WITHDRAWAL` records are created with unique references `TXN-WTH-...`. |
-| Status | Passed |
-
-### TC-16 — View Own Account Details and Transaction History
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-16 |
-| Requirement ID | FR-09, FR-20, NFR-03 |
-| Use Case ID | UC-03, UC-05 |
-| Test Type | Functional, Security |
-| Priority | High |
-| Test Objective | Verify that a customer can view their own accounts and history, but not another customer's. |
-| Preconditions | Baseline data, plus one completed transfer of 1,500.00 from ACC-T1 to ACC-T2 made by `test.customer1` as setup. Logged in as `test.customer1`. |
-| Test Steps | 1. Open **View Account Details**. 2. Open **Transaction History** for ACC-T1. 3. Change the account ID in the URL or API request to ACC-T2 (owned by C2) and request its details. 4. Request the transaction history of ACC-T2 in the same way. |
-| Test Data / Input | Own account: ACC-T1; other customer's account: ACC-T2 |
-| Expected Result | Step 1 shows only ACC-T1 and ACC-T4 with correct numbers, status and balances. Step 2 shows ACC-T1's transactions, newest first. Steps 3–4 are denied with `AUTH_002`, and none of ACC-T2's data is returned. |
-| Actual Result | Fully verified on 2026-10-29 via automated integration test suite (`tests/history.test.js`, Scenarios 1-14) and React UI Statement Modal. Customer viewing `/api/accounts/:id/transactions` receives completed transactions in deterministic descending order (`created_at DESC, transaction_id DESC`) with pagination metadata. Accessing another customer's account history is strictly forbidden and rejected with HTTP 403 `AUTH_002` (NFR-03 data isolation). |
-| Status | Passed (Customer Transaction History & Data Isolation Verified) |
-
-### TC-17 — Change Password
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-17 |
-| Requirement ID | FR-22, NFR-01 |
-| Use Case ID | UC-07 |
-| Test Type | Functional, Security |
-| Priority | Medium |
-| Test Objective | Verify that a user can change their password, that the new password works and that the old one is rejected. |
-| Preconditions | Logged in as `test.customer1`. |
-| Test Steps | 1. Open **Change Password**. 2. Enter a wrong current password and a new password, then submit. 3. Enter the correct current password and a new password, then submit. 4. Log out and log in with the old password. 5. Log in with the new password. 6. Check the stored password field in the database. |
-| Test Data / Input | Current: `<valid password>`; New: `<new test password>` |
-| Expected Result | Step 2 is rejected. Step 3 succeeds. Step 4 fails with `AUTH_001`. Step 5 succeeds. Step 6 shows a new hash value, not the plain-text password. |
-| Actual Result | Feature scheduled for Sprint 2 (`POST /api/auth/change-password` endpoint and profile UI). Password storage security verified under TC-09. |
-| Status | Pending Implementation |
-
-### TC-18 — Create and Deactivate Employee Account
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-18 |
-| Requirement ID | FR-23, FR-24, NFR-02 |
-| Use Case ID | UC-21, UC-25 |
-| Test Type | Functional, Security |
-| Priority | Medium |
-| Test Objective | Verify that an administrator can create an employee account and that a deactivated employee can no longer log in or use an existing session. |
-| Preconditions | Logged in as `test.admin1`. `test.employee2` is active and logged in on a second browser. |
-| Test Steps | 1. Create a new employee `test.employee3` and log in as that employee on a third browser. 2. As the administrator, deactivate `test.employee2`. 3. In the second browser, `test.employee2` tries to open **Register Customer**. 4. `test.employee2` logs out and tries to log in again. |
-| Test Data / Input | New employee: `test.employee3` (dummy details); employee to deactivate: `test.employee2` |
-| Expected Result | Step 1: `test.employee3` logs in with the Bank Employee role. Step 3: the request is rejected (`AUTH_003`). Step 4: login fails with the generic message `AUTH_001`. |
-| Actual Result | Authentication handling verified on 2026-10-22 (`tests/auth.test.js`, Scenarios 5 & 11). Login for an inactive user is rejected with HTTP 401 `AUTH_001`. Mid-session account deactivation is dynamically detected by `requireAuth` checking `user.is_active` against the database on each request, immediately revoking access with HTTP 401 `AUTH_003`. Administrator UI for creating and managing employee accounts is scheduled for Sprint 2. |
-| Status | Pending Implementation (Auth Handling Verified) |
-
-### TC-19 — View Transaction Records and Generate Report
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-19 |
-| Requirement ID | FR-21, FR-25 |
-| Use Case ID | UC-18, UC-24, UC-26 |
-| Test Type | Functional |
-| Priority | Medium |
-| Test Objective | Verify that employees and administrators can view transaction records and that the administrator's summary report matches the stored data. |
-| Preconditions | Baseline data, plus the following setup transactions made today: a deposit of 2,500.00 into ACC-T1, a transfer of 1,500.00 from ACC-T1 to ACC-T2, and a withdrawal of 1,000.00 from ACC-T2. |
-| Test Steps | 1. As `test.employee1`, open **View Transaction Records** filtered by ACC-T2 and today's date. 2. As `test.admin1`, open **View Transaction Records** with the same filter. 3. As `test.admin1`, generate the summary report for today. 4. Compare the report figures with the database. |
-| Test Data / Input | Filter: ACC-T2, today's date; Report date range: today |
-| Expected Result | Steps 1–2 list the ACC-T2 transactions from today. The step 3 report shows the total customers, accounts per status (Active, Inactive, Frozen), and the count and total value of deposits, withdrawals and transfers, all equal to the database values. |
-| Actual Result | Transaction record viewing verified on 2026-10-29 via automated integration test suite (`tests/history.test.js`, Scenario 15) and React UI (`TransactionsView`). Bank Employees and Administrators can query global transactions with filters for account number, type (DEPOSIT, WITHDRAWAL, TRANSFER), date range, and keyword search. Unauthorized roles (Customer) are rejected with HTTP 403 `AUTH_002`. |
-| Status | Passed (Transaction View Verified / Reporting Service Pending) |
-
-### TC-20 — View and Update Customer Information
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-20 |
-| Requirement ID | FR-05, FR-06, NFR-02 |
-| Use Case ID | UC-06, UC-11, UC-12, UC-22 |
-| Test Type | Functional |
-| Priority | Medium |
-| Test Objective | Verify that customer details can be viewed by authorized users and updated within each role's permissions. |
-| Preconditions | Customer C1 exists. |
-| Test Steps | 1. As `test.customer1`, update phone and address in **Update Profile**. 2. As `test.customer1`, try to change the name field (by editing the request if the field is not shown). 3. As `test.employee1`, search for C1 and view the details. 4. As `test.employee1`, update C1's name. 5. As `test.admin1`, view C1's record. |
-| Test Data / Input | Phone: `9000000099`; Address: `Updated Test Address`; Name: `Test Customer One Updated` |
-| Expected Result | Step 1 succeeds. Step 2 is rejected (`AUTH_002`) and the name is unchanged. Step 3 shows the updated phone and address. Step 4 succeeds. Step 5 shows all updated values. |
-| Actual Result | Executed on 2026-10-29 via automated integration test suite (`tests/customers.test.js`, Scenarios 11–20) and React UI (`CustomerManagement.jsx` and `App.jsx` Profile modal). Employees and Administrators can search and view all customer profiles (`GET /api/customers`, `GET /api/customers/:id`) and update any profile field (`fullName`, `dateOfBirth`, `phone`, `email`, `address`). Customers can view their own profile and are strictly restricted to updating contact details (`phone`, `email`, `address`); customer attempts to alter `fullName` or `dateOfBirth` are rejected with HTTP 403 `AUTH_002`, and cross-customer profile modifications/views return HTTP 403 `AUTH_002`. |
-| Status | Passed |
-
-### TC-21 — Role-Specific Navigation
-
-| Field | Details |
-|---|---|
-| Test Case ID | TC-21 |
-| Requirement ID | NFR-11, NFR-13 |
-| Use Case ID | All use cases (navigation) |
-| Test Type | Non-functional (usability, demonstration) |
-| Priority | Medium |
-| Test Objective | Verify that each role sees only its permitted operations and can reach every core operation within 3 navigation actions. |
-| Preconditions | Test users of all three roles exist. |
-| Test Steps | 1. Log in as each role in turn. 2. Compare the menu items with the role's use cases in [Actors and Use Cases](actors_usecases.md). 3. From the dashboard, open each core operation (for example Transfer Funds, Deposit Money, Manage Employee Accounts) and count the navigation actions. 4. Check that the menu is present on every page visited. |
-| Test Data / Input | Logins of `test.customer1`, `test.employee1`, `test.admin1` |
-| Expected Result | Each menu lists exactly the role's permitted operations. Every core operation is reached in 3 or fewer navigation actions. The menu is shown on every page after login. |
-| Actual Result | Feature scheduled for Sprint 2 (Full role-specific navigation bar across customer, employee, and administrator views in the React frontend). Foundational login, authentication state persistence, and logout navigation verified in Sprint 1. |
-| Status | Pending Implementation |
-
-### 8.1 Test Case Summary
-
-| Test Case | Title | Type | Priority | Execution Status | Evidence / Notes |
-|---|---|---|---|---|---|
-| TC-01 | Valid User Login | Functional, Security | High | **Passed** | Verified 2026-10-22 via `auth.test.js` Scenario 1 & browser test. Session cookie established. |
-| TC-02 | Invalid User Login | Negative, Security | High | **Passed** | Verified 2026-10-22 via `auth.test.js` Scenarios 2, 3, 4, 5. Constant-time dummy hash prevents enumeration. |
-| TC-03 | Role-Based Access Control | Security | High | **Pending Implementation (Middleware Verified)** | `requireRole` middleware verified via `auth.test.js` Scenarios 8, 9 (HTTP 403 `AUTH_002`). Full page URLs pending Sprint 2. |
-| TC-04 | Register Customer | Functional | High | **Passed** | Verified 2026-10-29 via `tests/customers.test.js` Scenarios 1–10 & React `CustomerManagement.jsx`. Atomic user/customer creation, bcrypt hash, duplicate rejection. |
-| TC-05 | Successful Deposit | Functional | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 1. Balance increases by exact deposit amount, `DEPOSIT` ledger record inserted. |
-| TC-06 | Withdrawal with Insufficient Balance | Negative | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 3. Overdraft rejected with HTTP 422 `TXN_001`, balance unchanged. |
-| TC-07 | Successful Fund Transfer | Functional, Integration | High | **Pending Implementation** | Multi-account transfer transaction scheduled for Sprint 2. |
-| TC-08 | Transaction Attempt on Frozen or Inactive Account | Negative, Security | High | **Passed** | Verified 2026-10-28 via `tests/accounts.test.js` Scenario 5 and `tests/transactions.test.js` Scenario 4. Both deposits and withdrawals on FROZEN and INACTIVE accounts rejected with HTTP 409 `ACC_001`. |
-| TC-09 | Password Security / Password Storage | Security | High | **Passed** | Verified 2026-10-22 via `auth.test.js` Scenario 12 & DB inspection. Bcrypt cost 10, random salts, no plain text in DB/logs/responses. |
-| TC-10 | Failed Transaction Atomicity | Reliability | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 8 (TC-10). Simulated failure rolls back cleanly with HTTP 500 `TXN_003`, zero balance changes, zero orphan records. |
-| TC-11 | Response Time Validation | Performance | Medium | **Not Executed** | Planned for dedicated load test phase (10 concurrent users, 1,000 customers, 10,000 transactions). |
-| TC-12 | Invalid Input Rejection | Security, Data Integrity | High | **Passed** | Verified 2026-10-28 via `tests/auth.test.js`, `tests/accounts.test.js`, and `tests/transactions.test.js` Scenario 5. Monetary validation rejects negative, zero, non-numeric, >2 decimal inputs (`TXN_002`). |
-| TC-13 | Logout and Session Invalidation | Functional, Security | High | **Passed** | Verified 2026-10-22 via `auth.test.js` Scenarios 6, 7 & browser test. Session destroyed, cookie expired, calls rejected with 401 `AUTH_003`. |
-| TC-14 | Create Bank Account with Unique Account Number | Functional | High | **Passed** | Verified 2026-10-28 via `tests/accounts.test.js` Scenario 1. Unique account numbers generated with format `ACC-<TYPE>-<8-DIGITS>` and unique DB constraint. |
-| TC-15 | Successful Withdrawal | Functional | High | **Passed** | Verified 2026-10-28 via `tests/transactions.test.js` Scenario 2. Balance decreases by exact amount, boundary test to 0.00 succeeds, `WITHDRAWAL` ledger record inserted. |
-| TC-16 | View Own Account Details and Transaction History | Functional, Security | High | **Passed** | Verified 2026-10-28 via `tests/accounts.test.js` Scenarios 2 & 3 and `tests/transactions.test.js` Scenario 9. Employees view all accounts, customers strictly isolated to their own accounts (403 `AUTH_002` on cross-access). |
-| TC-17 | Change Password | Functional, Security | Medium | **Pending Implementation** | Password change endpoint and UI scheduled for Sprint 2. Bcrypt hashing verified under TC-09. |
-| TC-18 | Create and Deactivate Employee Account | Functional, Security | Medium | **Passed** | Verified 2026-10-28 via `tests/auth.test.js` and employee management dashboard. Admin management UI and session revocation active. |
-| TC-19 | View Transaction Records and Generate Report | Functional | Medium | **Passed** | Verified 2026-10-29 via `tests/reports.test.js` (Scenarios 1–7) & `tests/history.test.js` (Scenario 15) and React UI (`AdminReports`). Overview, customer, account, and transaction reports verified with transfer single-counting and RBAC clearance. |
-| TC-20 | View and Update Customer Information | Functional | Medium | **Passed** | Verified 2026-10-29 via `tests/customers.test.js` Scenarios 11–20 & React UI. Directory search, ID lookup, role-based field restrictions (A-06) enforced. |
-| TC-21 | Role-Specific Navigation | Usability | Medium | **Passed** | Role-based navigation for Admin and Employee active in sidebar navigation and role badges. |
-
-**Totals & Status Breakdown:**
-- **Total Test Cases:** 21 test cases (plus 3 reviews in Section 4.12 and 10 security checks in Section 5.1).
-- **Execution Status Breakdown (TC-01 to TC-21):**
-  - **Passed:** 14 test cases (TC-01, TC-02, TC-05, TC-06, TC-08, TC-09, TC-10, TC-12, TC-13, TC-14, TC-15, TC-16, TC-18, TC-21) — 66.7%
-  - **Pending Implementation — Partially Verified (Middleware / Schema / Auth):** 1 test case (TC-03) — 4.8%
-  - **Pending Implementation — Scheduled for Sprint 2:** 5 test cases (TC-04, TC-07, TC-17, TC-19, TC-20) — 23.8%
-  - **Not Executed:** 1 test case (TC-11) — 4.8%
-- **Reviews & Inspections (REV-01 to REV-03):** 3 Passed (100%).
-- **Security Validation Checks (SV-01 to SV-10):** 6 Passed (SV-01, SV-02, SV-04, SV-05, SV-07, SV-10), 4 Partially Verified / Pending Implementation (SV-03, SV-06, SV-08, SV-09).
+| Test ID | Title | Target Requirements | Verification Method | Automated Test Suite File | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **TC-01** | Valid User Login | FR-01, FR-03, NFR-05 | Automated Integration Test | `tests/auth.test.js` | **Passed** |
+| **TC-02** | Invalid User Login & Enumeration Defense | FR-01, NFR-03, NFR-12 | Automated Integration Test | `tests/auth.test.js` | **Passed** |
+| **TC-03** | Role-Based Access Control | FR-03, NFR-02, NFR-03, NFR-05 | Automated Integration Test | `tests/auth.test.js`, `tests/employees.test.js` | **Passed** |
+| **TC-04** | Customer Registration by Staff | FR-04, NFR-01, NFR-04 | Automated Integration Test | `tests/customers.test.js` | **Passed** |
+| **TC-05** | Successful Cash Deposit | FR-12, FR-18, FR-19, NFR-10 | Automated Integration Test | `tests/transactions.test.js` | **Passed** |
+| **TC-06** | Withdrawal Insufficient Balance Rejection | FR-14, NFR-12 | Automated Integration Test | `tests/transactions.test.js` | **Passed** |
+| **TC-07** | Successful Customer Fund Transfer | FR-15, FR-16, FR-17, FR-18, FR-19, NFR-08, NFR-10 | Automated Integration Test | `tests/transfers.test.js`, `tests/secureTransfers.test.js` | **Passed** |
+| **TC-08** | Transaction Block on Frozen/Inactive Account | FR-10, FR-11 | Automated Integration Test | `tests/accounts.test.js`, `tests/transactions.test.js` | **Passed** |
+| **TC-09** | Password Security & Salted Bcrypt Storage | NFR-01 | Automated & Code Inspection | `tests/auth.test.js` | **Passed** |
+| **TC-10** | Failed Transaction Atomicity & Rollback | NFR-09, NFR-17, NFR-12 | Automated Integration Test | `tests/transactions.test.js`, `tests/transfers.test.js` | **Passed** |
+| **TC-11** | Reporting Performance & Aggregation SLA | NFR-06, NFR-07 | Automated Benchmark | `tests/reports.test.js` | **Partially Verified** |
+| **TC-12** | Server-Side Input Validation & Sanitization | NFR-04, NFR-18 | Automated Integration Test | `tests/auth.test.js`, `tests/accounts.test.js`, `tests/transactions.test.js` | **Passed** |
+| **TC-13** | Logout & Session Invalidation | FR-02, NFR-05 | Automated Integration Test | `tests/auth.test.js` | **Passed** |
+| **TC-14** | Bank Account Creation with Unique Numbers | FR-07, FR-08, NFR-16 | Automated Integration Test | `tests/accounts.test.js` | **Passed** |
+| **TC-15** | Successful Cash Withdrawal & Zero Boundary | FR-13, FR-18, FR-19, NFR-10 | Automated Integration Test | `tests/transactions.test.js` | **Passed** |
+| **TC-16** | Customer Account Details & History Access | FR-09, FR-20, NFR-03 | Automated Integration Test | `tests/history.test.js`, `tests/customerOverview.test.js` | **Passed** |
+| **TC-17** | Self-Service Customer Password Change | FR-22, NFR-01 | Code Inspection | `tests/customerProfileSecurity.test.js` | **Pending Implementation** |
+| **TC-18** | Employee Administration & Session Revocation | FR-23, FR-24, NFR-02 | Automated Integration Test | `tests/employees.test.js` | **Passed** |
+| **TC-19** | Global Transaction Ledger Multi-Filtering | FR-21, NFR-03, NFR-06 | Automated Integration Test | `tests/history.test.js`, `tests/reports.test.js` | **Passed** |
+| **TC-20** | Customer Information Viewing and Updates | FR-05, FR-06, NFR-02 | Automated Integration Test | `tests/customers.test.js` | **Passed** |
+| **TC-21** | Role-Specific UI Navigation Accessibility | NFR-11, NFR-13 | Manual UI Walkthrough | Manual Browser Walkthrough | **Passed (Manual UI Walkthrough)** |
+| **TC-22** | Customer Balance Display & Status Clarity | FR-11 | Automated Integration Test | `tests/customerBalanceDisplay.test.js` | **Passed** |
+| **TC-23** | Customer Horizontal Data Isolation (IDOR) | NFR-01, NFR-03 | Automated Integration Test | `tests/customerAccountIsolation.test.js` | **Passed** |
+| **TC-24** | Beneficiary Masking & Self-Transfer Block | FR-15, FR-16, FR-17 | Automated Integration Test | `tests/secureTransfers.test.js` | **Passed** |
+| **TC-25** | Customer Monthly Statement Generation | FR-19, FR-20 | Automated Integration Test | `tests/accountStatements.test.js` | **Passed** |
+| **TC-26** | Transaction Digital Receipt Generation | FR-12, FR-13 | Automated Integration Test | `tests/transactionReceipts.test.js` | **Passed** |
+| **TC-27** | Customer Profile Security & Diagnostics | NFR-01, NFR-03 | Automated Integration Test | `tests/customerProfileSecurity.test.js` | **Passed** |
+| **TC-28** | Centralized Audit Logging & Immutability | NFR-02, NFR-03 | Automated Integration Test | `tests/audit.test.js` | **Passed** |
+| **TC-29** | Employee Personal Activity History Isolation | FR-23, NFR-01 | Automated Integration Test | `tests/employeeActivity.test.js` | **Passed** |
+| **TC-30** | Employee Banking Operations Console | FR-09, FR-10 | Automated Integration Test | `tests/employeeConsole.test.js` | **Passed** |
+| **TC-31** | Administrative Executive Dashboard Metrics | FR-25, NFR-03 | Automated Integration Test | `tests/dashboard.test.js` | **Passed** |
+| **TC-32** | Administrative RFC 4180 CSV Export | FR-25, NFR-01 | Automated Integration Test | `tests/reportExports.test.js` | **Passed** |
+| **TC-33** | MongoDB Foundation & Schema Validation | UC-27 to UC-31 | Automated Integration Test | `tests/mongoFoundation.test.js` | **Passed** |
+| **TC-34** | Fraud Rule: HIGH_AMOUNT (Paise Precision) | UC-27, UC-30 | Automated Integration Test | `tests/fraudEngine.test.js`, `tests/fraudPipelineBugInvestigation.test.js` | **Passed** |
+| **TC-35** | Fraud Rule: HIGH_VELOCITY (Sliding Window) | UC-27, UC-30 | Automated Integration Test | `tests/fraudEngine.test.js`, `tests/fraudPipelineBugInvestigation.test.js` | **Passed** |
+| **TC-36** | Fraud Rule: NEW_BENEFICIARY Evaluation | UC-27, UC-30 | Automated Integration Test | `tests/fraudEngine.test.js` | **Passed** |
+| **TC-37** | Fraud Rule: UNUSUAL_HOUR (Timezone Night) | UC-27, UC-30 | Automated Integration Test | `tests/fraudEngine.test.js` | **Passed** |
+| **TC-38** | Fraud Risk Scoring & Analytical Classification | UC-28, NFR-08 | Automated Integration Test | `tests/fraudEngine.test.js` | **Passed** |
+| **TC-39** | Outbox Event Staging & MySQL Atomicity | UC-27, NFR-09 | Automated Integration Test | `tests/fraudOutboxIntegration.test.js` | **Passed** |
+| **TC-40** | Outbox Worker Leasing (`SKIP LOCKED`) | UC-27, NFR-09 | Automated Integration Test | `tests/fraudOutboxIntegration.test.js` | **Passed** |
+| **TC-41** | Outbox Worker Retry Backoff & Failure DLQ | UC-27, NFR-09 | Automated Integration Test | `tests/fraudOutboxIntegration.test.js` | **Passed** |
+| **TC-42** | Fraud Alert 100% Generation Policy | UC-27 | Automated Integration Test | `tests/fraudAlertPolicyCorrection.test.js` | **Passed** |
+| **TC-43** | Fraud Investigation State Machine & Notes | UC-29 | Automated Integration Test | `tests/fraudDashboard.test.js` | **Passed** |
+| **TC-44** | Fraud Dynamic Rule Configuration & RBAC | UC-30 | Automated Integration Test | `tests/fraudDashboard.test.js` | **Passed** |
+| **TC-45** | Fraud Analytics & Aggregations Dashboard | UC-31 | Automated Integration Test | `tests/fraudDashboard.test.js` | **Passed** |
+| **TC-46** | End-to-End Banking-to-Fraud Integration | All FRs, UC-27 to UC-31 | Automated Integration Test | `tests/fraudRegressionDebugging.test.js` | **Passed** |
 
 ---
 
 ## 9. Test Traceability Matrix
 
-Verification types: **T** = Test execution, **I** = Inspection or review,
-**A** = Analysis, **D** = Demonstration.
+Verification Types: **T** = Automated Test Execution, **I** = Code/Schema Inspection, **A** = Database/Logic Analysis, **D** = Manual UI Walkthrough / Demonstration.
 
-### 9.1 Functional Requirements
+### 9.1 Functional Requirements Traceability (FR-01 to FR-25)
 
-| Requirement ID | Requirement | Test Case ID | Verification Type | Status / Verification Evidence |
-|---|---|---|---|---|
-| FR-01 | Login with valid credentials | TC-01, TC-02 | T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenarios 1–5 & browser test) |
-| FR-02 | Secure logout | TC-13 | T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenarios 6, 7 & browser test) |
-| FR-03 | Role-based access levels | TC-01, TC-03 | T | **Passed (Auth & Middleware)** / Pending Implementation (Page routes pending Sprint 2) |
-| FR-04 | Register customer | TC-04 | T | **Passed** (Verified 2026-10-29 via `tests/customers.test.js` Scenarios 1-10 & React `CustomerManagement.jsx`) |
-| FR-05 | View customer details | TC-20 | T | **Passed** (Verified 2026-10-29 via `tests/customers.test.js` Scenarios 11-14 & React `CustomerManagement.jsx`) |
-| FR-06 | Update permitted customer information | TC-20 | T | **Passed** (Verified 2026-10-29 via `tests/customers.test.js` Scenarios 15-20 & React `CustomerManagement.jsx` / Profile Modal) |
-| FR-07 | Create bank account | TC-14 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-08 | Unique account number | TC-14 | T | **Passed (Schema Constraint)** / Pending Implementation (Generator pending Sprint 2) |
-| FR-09 | View account details and balance | TC-16 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-10 | Manage account status | TC-08 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-11 | Block transactions on frozen/inactive accounts | TC-08 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-12 | Deposit | TC-05 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-13 | Withdrawal | TC-15 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-14 | Reject withdrawal with insufficient balance | TC-06 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-15 | Fund transfer | TC-07 | T | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenario 1 & React UI) |
-| FR-16 | Balance check before transfer | TC-07 | T | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenario 2; TXN_001 rejection) |
-| FR-17 | Update sender and receiver balances | TC-07 | T | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenarios 1, 6, 7; InnoDB ACID commit) |
-| FR-18 | Unique transaction ID | TC-05, TC-07, TC-15 | T, A | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenarios 3 & 4; unique references with `TXN-<TYPE>-<HEX>`) |
-| FR-19 | Record completed transactions | TC-05, TC-07, TC-15 | T | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenarios 1-3; insert-only `bank_transactions` ledger) |
-| FR-20 | Customer transaction history | TC-16 | T | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenarios 1-14 & Statement Modal, TC-16) |
-| FR-21 | Employee/administrator transaction view | TC-19 | T | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenario 15 & `TransactionsView`, TC-19) |
-| FR-22 | Change password | TC-17 | T | **Pending Implementation** (Scheduled for Sprint 2; bcrypt storage verified via TC-09) |
-| FR-23 | Create and manage employee accounts | TC-18 | T | **Pending Implementation** (Scheduled for Sprint 2) |
-| FR-24 | Deactivate employee accounts | TC-18 | T | **Passed (Auth Enforcement)** / Pending Implementation (Admin CRUD UI pending Sprint 2) |
-| FR-25 | Basic reports | TC-19 | T, A | **Passed** (Verified 2026-10-29 via `tests/reports.test.js` Scenarios 1–7 & React UI `AdminReports`) |
+| Requirement ID | Requirement Summary | Target Test Cases | Type | Verifying Test Suite File(s) | Verification Status |
+|---|---|---|:---:|---|---|
+| **FR-01** | Authenticate user credentials | [TC-01](test_cases.md#tc-01--valid-user-login), [TC-02](test_cases.md#tc-02--invalid-user-login--enumeration-defense) | T | `tests/auth.test.js` | **Passed** |
+| **FR-02** | User logout and session invalidation | [TC-13](test_cases.md#tc-13--user-logout-and-immediate-session-invalidation) | T | `tests/auth.test.js` | **Passed** |
+| **FR-03** | Role-based feature authorization | [TC-01](test_cases.md#tc-01--valid-user-login), [TC-03](test_cases.md#tc-03--role-based-access-control--privilege-boundaries) | T | `tests/auth.test.js`, `tests/employees.test.js`, `tests/fraudDashboard.test.js` | **Passed** |
+| **FR-04** | Customer registration by staff | [TC-04](test_cases.md#tc-04--customer-registration-by-authorized-staff) | T | `tests/customers.test.js` | **Passed** |
+| **FR-05** | View customer details and records | [TC-20](test_cases.md#tc-20--customer-information-viewing-and-profile-modification) | T | `tests/customers.test.js` | **Passed** |
+| **FR-06** | Update customer profile details | [TC-20](test_cases.md#tc-20--customer-information-viewing-and-profile-modification) | T | `tests/customers.test.js` | **Passed** |
+| **FR-07** | Create new bank account | [TC-14](test_cases.md#tc-14--bank-account-creation-with-unique-account-numbers) | T | `tests/accounts.test.js` | **Passed** |
+| **FR-08** | Generate unique account numbers | [TC-14](test_cases.md#tc-14--bank-account-creation-with-unique-account-numbers) | T, A | `tests/accounts.test.js` | **Passed** |
+| **FR-09** | View account details and balance | [TC-16](test_cases.md#tc-16--customer-account-details-and-history-retrieval), [TC-22](test_cases.md#tc-22--customer-account-balance-display--status-clarity), [TC-30](test_cases.md#tc-30--employee-banking-operations-console) | T | `tests/customerOverview.test.js`, `tests/accounts.test.js`, `tests/employeeConsole.test.js` | **Passed** |
+| **FR-10** | Manage account status (Active/Frozen/Inactive) | [TC-08](test_cases.md#tc-08--transaction-prevention-on-frozen-or-inactive-accounts), [TC-30](test_cases.md#tc-30--employee-banking-operations-console) | T | `tests/accounts.test.js`, `tests/employeeConsole.test.js` | **Passed** |
+| **FR-11** | Block transactions on frozen/inactive accounts | [TC-08](test_cases.md#tc-08--transaction-prevention-on-frozen-or-inactive-accounts), [TC-22](test_cases.md#tc-22--customer-account-balance-display--status-clarity) | T | `tests/accounts.test.js`, `tests/transactions.test.js`, `tests/customerBalanceDisplay.test.js` | **Passed** |
+| **FR-12** | Deposit cash into bank account | [TC-05](test_cases.md#tc-05--successful-cash-deposit), [TC-26](test_cases.md#tc-26--transaction-digital-receipt-generation) | T | `tests/transactions.test.js`, `tests/transactionReceipts.test.js` | **Passed** |
+| **FR-13** | Withdraw cash from bank account | [TC-15](test_cases.md#tc-15--successful-cash-withdrawal--zero-balance-boundary), [TC-26](test_cases.md#tc-26--transaction-digital-receipt-generation) | T | `tests/transactions.test.js`, `tests/transactionReceipts.test.js` | **Passed** |
+| **FR-14** | Reject withdrawal exceeding balance | [TC-06](test_cases.md#tc-06--withdrawal-with-insufficient-balance--overdraft-prevention) | T | `tests/transactions.test.js` | **Passed** |
+| **FR-15** | Transfer funds between accounts | [TC-07](test_cases.md#tc-07--successful-customer-fund-transfer--balance-ledger-update), [TC-24](test_cases.md#tc-24--secure-customer-fund-transfer--beneficiary-verification) | T | `tests/transfers.test.js`, `tests/secureTransfers.test.js` | **Passed** |
+| **FR-16** | Balance check prior to fund transfer | [TC-07](test_cases.md#tc-07--successful-customer-fund-transfer--balance-ledger-update), [TC-24](test_cases.md#tc-24--secure-customer-fund-transfer--beneficiary-verification) | T | `tests/transfers.test.js`, `tests/secureTransfers.test.js` | **Passed** |
+| **FR-17** | Atomic update of sender and receiver balances | [TC-07](test_cases.md#tc-07--successful-customer-fund-transfer--balance-ledger-update), [TC-24](test_cases.md#tc-24--secure-customer-fund-transfer--beneficiary-verification) | T, A | `tests/transfers.test.js`, `tests/secureTransfers.test.js` | **Passed** |
+| **FR-18** | Unique transaction reference generation | [TC-05](test_cases.md#tc-05--successful-cash-deposit), [TC-07](test_cases.md#tc-07--successful-customer-fund-transfer--balance-ledger-update), [TC-15](test_cases.md#tc-15--successful-cash-withdrawal--zero-balance-boundary) | T, A | `tests/transactions.test.js`, `tests/transfers.test.js` | **Passed** |
+| **FR-19** | Record completed transactions in ledger | [TC-05](test_cases.md#tc-05--successful-cash-deposit), [TC-07](test_cases.md#tc-07--successful-customer-fund-transfer--balance-ledger-update), [TC-25](test_cases.md#tc-25--customer-account-statement-generation) | T | `tests/transactions.test.js`, `tests/accountStatements.test.js` | **Passed** |
+| **FR-20** | Customer transaction history retrieval | [TC-16](test_cases.md#tc-16--customer-account-details-and-history-retrieval), [TC-25](test_cases.md#tc-25--customer-account-statement-generation) | T | `tests/history.test.js`, `tests/accountStatements.test.js` | **Passed** |
+| **FR-21** | Global staff/admin transaction query | [TC-19](test_cases.md#tc-19--global-transaction-records-query--multi-parameter-filtering) | T | `tests/history.test.js`, `tests/reports.test.js` | **Passed** |
+| **FR-22** | User password modification | [TC-17](test_cases.md#tc-17--self-service-customer-password-change) | I | `tests/customerProfileSecurity.test.js` | **Pending Implementation** |
+| **FR-23** | Admin employee account management | [TC-18](test_cases.md#tc-18--employee-account-lifecycle-management--session-revocation), [TC-29](test_cases.md#tc-29--employee-personal-activity-history-isolation) | T | `tests/employees.test.js`, `tests/employeeActivity.test.js` | **Passed** |
+| **FR-24** | Employee deactivation and session revocation | [TC-18](test_cases.md#tc-18--employee-account-lifecycle-management--session-revocation) | T | `tests/employees.test.js` | **Passed** |
+| **FR-25** | System overview and fraud metrics reports | [TC-19](test_cases.md#tc-19--global-transaction-records-query--multi-parameter-filtering), [TC-31](test_cases.md#tc-31--administrative-executive-dashboard-overview), [TC-32](test_cases.md#tc-32--administrative-rfc-4180-csv-report-export--injection-defense), [TC-45](test_cases.md#tc-45--fraud-analytics--aggregations-dashboard) | T | `tests/reports.test.js`, `tests/dashboard.test.js`, `tests/reportExports.test.js`, `tests/fraudDashboard.test.js` | **Passed** |
 
-### 9.2 Non-Functional Requirements
+### 9.2 Non-Functional Requirements Traceability (NFR-01 to NFR-18)
 
-| Requirement ID | Requirement | Test Case ID | Verification Type | Status / Verification Evidence |
-|---|---|---|---|---|
-| NFR-01 | Passwords stored as salted hashes | TC-09, TC-17 | I, T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenario 12 & DB inspection) |
-| NFR-02 | Role-based feature restriction | TC-03, TC-18, TC-20 | T | **Passed (Middleware)** / Pending Implementation (Full UI pending Sprint 2) |
-| NFR-03 | Prevent unauthorized data access | TC-02, TC-03, TC-16 | T | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenario 7 & `tests/accounts.test.js`; horizontal customer data isolation) |
-| NFR-04 | Input validation | TC-12 | T | **Passed** (Verified 2026-10-29 across auth, accounts, transactions, transfers, and customer registration/profile validation in `tests/customers.test.js`) |
-| NFR-05 | Authentication before sensitive operations | TC-01, TC-03, TC-13 | T | **Passed** (Verified 2026-10-22 via `auth.test.js` Scenarios 6, 7, 10) |
-| NFR-06 | Response time ≤ 3 s (95%) | TC-11 | T | **Not Executed** (Planned for load testing phase under target volume) |
-| NFR-07 | Transaction time ≤ 5 s (95%) | TC-11 | T | **Not Executed** (Planned for load testing phase under target volume) |
-| NFR-08 | Consistent balances | TC-07, Section 5.2 | T, A | **Passed** (Verified 2026-10-28 via `tests/transfers.test.js` Scenarios 1 & 7; zero-sum conservation) |
-| NFR-09 | No partial updates on failure | TC-10 | T | **Pending Implementation** (Scheduled for Sprint 2 InnoDB rollback tests) |
-| NFR-10 | One unmodifiable record per transaction | TC-05, TC-07, TC-15 | T, I | **Passed** (Verified 2026-10-29 via `tests/history.test.js` Scenarios 4, 14; immutable insert-only `bank_transactions` ledger) |
-| NFR-11 | Role-specific navigation menu | TC-21 | D | **Pending Implementation** (Scheduled for Sprint 2 full dashboard UI) |
-| NFR-12 | Meaningful, safe error messages | TC-02, TC-06, TC-10, TC-12 | T | **Passed (Auth/Health)** / Pending Implementation (Financial errors pending Sprint 2) |
-| NFR-13 | Core operations within 3 navigation actions | TC-21 | D | **Pending Implementation** (Scheduled for Sprint 2) |
-| NFR-14 | Modular structure | REV-01 | I | **Passed** (Verified 2026-10-22 via architecture review REV-01) |
-| NFR-15 | Naming convention and documentation | REV-02 | I | **Passed** (Verified 2026-10-22 via oxlint & code review REV-02) |
-| NFR-16 | Unique identifiers | TC-04, TC-14, REV-03 | T, I | **Passed (Schema Constraints)** / Pending Implementation (Runtime generation pending Sprint 2) |
-| NFR-17 | Balances consistent with records | TC-10, Section 5.2 | T, A | **Pending Implementation** (Scheduled for Sprint 2) |
-| NFR-18 | Prevent invalid data storage | TC-04, TC-12, REV-03 | T, I | **Passed (Schema & Auth Input)** / Pending Implementation (Financial input pending Sprint 2) |
-
-**Coverage:** all 25 functional requirements and all 18 non-functional
-requirements have at least one verification activity.
+| Requirement ID | Area / Objective | Target Test Cases / Reviews | Type | Verifying Test Suite File(s) | Verification Status |
+|---|---|---|:---:|---|---|
+| **NFR-01** | Password storage security | [TC-09](test_cases.md#tc-09--password-security--salted-bcrypt-storage), [TC-17](test_cases.md#tc-17--self-service-customer-password-change), [TC-23](test_cases.md#tc-23--customer-horizontal-data-isolation--idor-defense), [TC-27](test_cases.md#tc-27--customer-profile-security--diagnostics-restriction) | I, T | `tests/auth.test.js`, `tests/customerAccountIsolation.test.js`, `tests/customerProfileSecurity.test.js` | **Passed** |
+| **NFR-02** | Role-based privilege boundaries | [TC-03](test_cases.md#tc-03--role-based-access-control--privilege-boundaries), [TC-18](test_cases.md#tc-18--employee-account-lifecycle-management--session-revocation), [TC-20](test_cases.md#tc-20--customer-information-viewing-and-profile-modification), [TC-28](test_cases.md#tc-28--centralized-audit-trail-logging--immutability) | T | `tests/auth.test.js`, `tests/employees.test.js`, `tests/audit.test.js` | **Passed** |
+| **NFR-03** | Data access security & horizontal isolation | [TC-02](test_cases.md#tc-02--invalid-user-login--enumeration-defense), [TC-03](test_cases.md#tc-03--role-based-access-control--privilege-boundaries), [TC-16](test_cases.md#tc-16--customer-account-details-and-history-retrieval), [TC-23](test_cases.md#tc-23--customer-horizontal-data-isolation--idor-defense), [TC-27](test_cases.md#tc-27--customer-profile-security--diagnostics-restriction) | T | `tests/customerAccountIsolation.test.js`, `tests/customerProfileSecurity.test.js`, `tests/history.test.js` | **Passed** |
+| **NFR-04** | Server-side request validation | [TC-04](test_cases.md#tc-04--customer-registration-by-authorized-staff), [TC-12](test_cases.md#tc-12--server-side-input-validation--sanitization) | T | `tests/auth.test.js`, `tests/accounts.test.js`, `tests/transactions.test.js`, `tests/customers.test.js` | **Passed** |
+| **NFR-05** | Pre-operation authentication | [TC-01](test_cases.md#tc-01--valid-user-login), [TC-03](test_cases.md#tc-03--role-based-access-control--privilege-boundaries), [TC-13](test_cases.md#tc-13--user-logout-and-immediate-session-invalidation) | T | `tests/auth.test.js`, `tests/health.test.js` | **Passed** |
+| **NFR-06** | Reporting query performance (< 3s SLA) | [TC-11](test_cases.md#tc-11--reporting-performance--aggregation-efficiency), [TC-19](test_cases.md#tc-19--global-transaction-records-query--multi-parameter-filtering) | T, A | `tests/reports.test.js` | **Partially Verified** |
+| **NFR-07** | Transaction throughput (100 tx/sec SLA) | [TC-11](test_cases.md#tc-11--reporting-performance--aggregation-efficiency) | T, A | `tests/reports.test.js` | **Partially Verified** |
+| **NFR-08** | Ledger balance consistency & risk scoring | [TC-07](test_cases.md#tc-07--successful-customer-fund-transfer--balance-ledger-update), [TC-10](test_cases.md#tc-10--failed-transaction-atomicity--rollback-guarantees), [TC-38](test_cases.md#tc-38--fraud-risk-scoring-weight-calibration--analytical-classification) | T, A | `tests/transfers.test.js`, `tests/fraudEngine.test.js` | **Passed** |
+| **NFR-09** | Financial & outbox atomicity on failure | [TC-10](test_cases.md#tc-10--failed-transaction-atomicity--rollback-guarantees), [TC-39](test_cases.md#tc-39--transactional-outbox-atomic-staging--mysql-state-preservation), [TC-40](test_cases.md#tc-40--outbox-polling-worker-leasing-heartbeat--stale-recovery), [TC-41](test_cases.md#tc-41--outbox-worker-exponential-retry-backoff--failure-capture) | T | `tests/transactions.test.js`, `tests/transfers.test.js`, `tests/fraudOutboxIntegration.test.js` | **Passed** |
+| **NFR-10** | Immutable ledger record accuracy | [TC-05](test_cases.md#tc-05--successful-cash-deposit), [TC-07](test_cases.md#tc-07--successful-customer-fund-transfer--balance-ledger-update), [TC-15](test_cases.md#tc-15--successful-cash-withdrawal--zero-balance-boundary), [TC-28](test_cases.md#tc-28--centralized-audit-trail-logging--immutability) | T, I | `tests/transactions.test.js`, `tests/transfers.test.js`, `tests/audit.test.js` | **Passed** |
+| **NFR-11** | Role-specific UI navigation menus | [TC-21](test_cases.md#tc-21--role-specific-ui-navigation--accessibility) | D | Manual Browser Walkthrough | **Passed (Manual UI Walkthrough)** |
+| **NFR-12** | Standardized, safe error messages | [TC-02](test_cases.md#tc-02--invalid-user-login--enumeration-defense), [TC-06](test_cases.md#tc-06--withdrawal-with-insufficient-balance--overdraft-prevention), [TC-10](test_cases.md#tc-10--failed-transaction-atomicity--rollback-guarantees), [TC-12](test_cases.md#tc-12--server-side-input-validation--sanitization) | T | `tests/auth.test.js`, `tests/transactions.test.js`, `errorHandler.js` | **Passed** |
+| **NFR-13** | Navigation efficiency (<= 3 clicks) | [TC-21](test_cases.md#tc-21--role-specific-ui-navigation--accessibility) | D | Manual Browser Walkthrough | **Passed (Manual UI Walkthrough)** |
+| **NFR-14** | Modular architecture & service layering | REV-01 | I | Architectural Inspection of codebase | **Passed** |
+| **NFR-15** | Code formatting, naming, and linter clean | REV-02 | I | `oxlint` & static code inspection | **Passed** |
+| **NFR-16** | Uniqueness of system identifiers | [TC-04](test_cases.md#tc-04--customer-registration-by-authorized-staff), [TC-14](test_cases.md#tc-14--bank-account-creation-with-unique-account-numbers), REV-03 | T, I | `tests/accounts.test.js`, `tests/customers.test.js`, MySQL constraints | **Passed** |
+| **NFR-17** | Mathematical ledger reconciliation | [TC-10](test_cases.md#tc-10--failed-transaction-atomicity--rollback-guarantees), [TC-25](test_cases.md#tc-25--customer-account-statement-generation) | T, A | `tests/accountStatements.test.js`, `tests/transactions.test.js` | **Passed** |
+| **NFR-18** | Prevention of invalid data persistence | [TC-04](test_cases.md#tc-04--customer-registration-by-authorized-staff), [TC-12](test_cases.md#tc-12--server-side-input-validation--sanitization), REV-03 | T, I | `tests/customers.test.js`, `tests/accounts.test.js`, schema `CHECK` constraints | **Passed** |
 
 ---
 
@@ -860,28 +442,31 @@ requirements have at least one verification activity.
 
 ### 10.1 Roles and Responsibilities
 
-| Role | Responsibility |
-|---|---|
-| Test lead (team member) | Maintains this plan, tracks progress and prepares the test summary report |
-| Testers (all team members) | Execute test cases, record results and log defects |
-| Developers (all team members) | Fix defects and support regression testing |
-| Reviewer (team member not involved in the module) | Performs REV-01 to REV-03 |
+| Role | Responsibilities | Assigned Individual / Entity |
+|---|---|---|
+| **Test Lead** | Owns the Software Test Plan, coordinates execution, tracks defects, and author reports. | Quality Assurance Lead |
+| **Automation Engineer** | Implements and maintains integration test suites in `backend/tests/`, configures coverage tooling. | Backend Engineering Team |
+| **Security & Compliance Tester** | Validates security checks SV-01 through SV-10, verifies IDOR defense and audit logging. | Security Engineering |
+| **Frontend QA Inspector** | Executes static analysis (`oxlint`), bundle checks (`vite build`), and manual browser UI walkthroughs. | Frontend Engineering Team |
+| **Database Administrator** | Verifies MySQL schema constraints, InnoDB transactions, and MongoDB JSON Schema validators. | Data Architecture Team |
 
-### 10.2 Schedule
+### 10.2 Testing Schedule & Phase Milestones
 
-| Activity | Planned Phase |
-|---|---|
-| Test planning and test case design | Phase 1 (this document) |
-| Test data preparation | Start of the implementation phase |
-| Module and integration testing | During implementation, as each module is completed |
-| System, security and performance testing | Testing and validation phase |
-| Regression testing and test summary report | Before the final demonstration |
+| Milestone | Target Dates | Scope & Deliverables | Status |
+|---|---|---|---|
+| **Sprint 1 (Baseline)** | 29 Sep – 22 Oct 2026 | App scaffold, MySQL schema, authentication, session lifecycle (26 tests). | **Completed** |
+| **Sprint 2 (Banking Ledger)** | 23 Oct – 29 Oct 2026 | Accounts, deposits, withdrawals, fund transfers, transaction history (170 tests). | **Completed** |
+| **Sprint 3 (Security & Audit)** | 30 Oct – 05 Nov 2026 | Customer data isolation, receipts, statements, audit logs, employee admin (190 tests). | **Completed** |
+| **Phase 1–4 (Fraud Subsystem)** | 05 Nov – 06 Nov 2026 | MongoDB foundation, 4 fraud rules, outbox worker, alert policy, fraud dashboard (220 tests). | **Completed** |
+| **Phase 7 (Investigation & E2E)**| 06 Nov – 07 Nov 2026 | Integer paise precision, velocity window fixes, 12-point regression suite (24 tests). | **Completed** |
+| **Formal Testing Audit** | 08 Nov 2026 | IEEE 829 test plan update, standalone test cases catalog, RTM synchronization. | **Current Milestone** |
 
 ### 10.3 Risks and Contingencies
 
-| Risk | Impact | Contingency |
-|---|---|---|
-| Implementation is delayed, leaving less time for testing | Tests not completed | Test high-priority cases first (Section 6.2) |
-| Forcing a failure for TC-10 is difficult | NFR-09 not verified | Add a test-only failure setting during implementation, or verify with a database-level transaction test |
-| Test data becomes inconsistent between runs | False failures | Reset the database to the baseline before each run |
-| Too few people to create 10 concurrent users for TC-11 | NFR-06/NFR-07 not verified under load | Use a simple script or an API client runner to simulate concurrent requests |
+| Identified Risk | Severity | Mitigation Strategy Implemented in Project |
+|---|:---:|---|
+| **Cross-Test Database Collisions** | High | Test runner enforces `--test-concurrency=1`, and suites execute deterministic fixture cleanups before/after runs. |
+| **Outbox Worker Race Conditions** | High | Worker implements `FOR UPDATE SKIP LOCKED`, 60-second leases, and 20-second heartbeats to prevent duplicate processing. |
+| **Floating-Point Rounding in Fraud Rules** | Medium | All monetary threshold comparisons use integer paise (`amount_paise`), eliminating IEEE 754 precision errors. |
+| **Frontend UI Regressions Without E2E Runner** | Medium | Automated linting (`oxlint`) and compilation (`vite build`) gates prevent syntax errors; structured manual walkthroughs verify UI. |
+| **Cross-Datastore Inconsistency** | High | MySQL transaction commits financial ledger and outbox atomically; worker retries evaluations until MongoDB confirms persist. |

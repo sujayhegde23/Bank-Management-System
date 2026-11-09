@@ -1,83 +1,167 @@
-# Logical Data Model and Account Status States
+# Data Design — Dual-Database Model (MySQL & MongoDB)
 
-These diagrams support the Data Design section of the
-[Software Architecture and Design Specification](../architecture_design.md#7-data-design).
-They are a **preliminary logical design**. The final database schema will be
-produced in the system design phase.
+This document specifies the dual-database architecture of the Bank Management System, supporting Section 7 of the [Software Architecture and Design Specification](../architecture_design.md).
 
-## 1. Entity-Relationship Diagram
+The system implements a polyglot persistence architecture:
+1. **Relational Database (MySQL 8.0 / InnoDB):** Authoritative transactional ledger for accounts, balances, users, and outbox events.
+2. **Document Database (MongoDB):** Flexible store for fraud rules, risk assessments, alerts, and investigations.
+
+## 1. Entity-Relationship & Document Model
 
 ```mermaid
 erDiagram
+    %% Relational MySQL Entities
     USER ||--o| CUSTOMER : "has profile"
     USER ||--o| EMPLOYEE : "has profile"
     CUSTOMER ||--o{ ACCOUNT : owns
     ACCOUNT ||--o{ BANK_TRANSACTION : "is source of"
     ACCOUNT ||--o{ BANK_TRANSACTION : "is destination of"
     USER ||--o{ BANK_TRANSACTION : performs
+    USER ||--o{ AUDIT_LOG : generates
+    BANK_TRANSACTION ||--o| FRAUD_OUTBOX_EVENT : stages
+
+    %% Logical Relationships Across Dual Databases (Referenced by transactionId)
+    BANK_TRANSACTION ||--o| TRANSACTION_RISK_ASSESSMENT : "evaluates (NoSQL)"
+    BANK_TRANSACTION ||--o| FRAUD_ALERT : "triggers (NoSQL)"
+    FRAUD_ALERT ||--o| FRAUD_INVESTIGATION : "investigated by (NoSQL)"
+    EMPLOYEE ||--o{ FRAUD_INVESTIGATION : "assigned to"
 
     USER {
         bigint user_id PK
         string username UK
-        string password_hash "salted hash, never plain text"
-        string role "CUSTOMER, EMPLOYEE or ADMIN"
-        string status "ACTIVE or INACTIVE"
+        string password_hash "Salted bcrypt hash (cost 10)"
+        string role "CUSTOMER, EMPLOYEE, ADMIN"
+        string status "ACTIVE, INACTIVE"
         datetime created_at
+        datetime updated_at
     }
+
     CUSTOMER {
         bigint customer_id PK
         bigint user_id FK "UNIQUE"
         string full_name
         date date_of_birth
-        string phone
-        string email
+        string phone "INDEX"
+        string email "INDEX"
         string address
         datetime created_at
+        datetime updated_at
     }
+
     EMPLOYEE {
         bigint employee_id PK
         bigint user_id FK "UNIQUE"
         string full_name
-        string email
+        string email "INDEX"
         string phone
         datetime created_at
+        datetime updated_at
     }
+
     ACCOUNT {
         bigint account_id PK
-        string account_number UK "system generated"
-        bigint customer_id FK
-        string account_type "e.g. SAVINGS, CURRENT"
+        string account_number UK "Format: ACC-<TYPE>-<8DIGITS>"
+        bigint customer_id FK "INDEX"
+        string account_type "SAVINGS, CURRENT"
         decimal balance "DECIMAL(15,2), CHECK >= 0"
-        string status "ACTIVE, INACTIVE or FROZEN"
+        string status "ACTIVE, INACTIVE, FROZEN"
         datetime opened_at
         datetime updated_at
     }
+
     BANK_TRANSACTION {
         bigint transaction_id PK
-        string transaction_ref UK "unique ID shown to users"
-        string type "DEPOSIT, WITHDRAWAL or TRANSFER"
+        string transaction_ref UK "Format: TXN-<TYPE>-<HEX>"
+        string type "DEPOSIT, WITHDRAWAL, TRANSFER"
         decimal amount "DECIMAL(15,2), CHECK > 0"
-        bigint source_account_id FK "null for DEPOSIT"
-        bigint destination_account_id FK "null for WITHDRAWAL"
+        bigint source_account_id FK "NULL for DEPOSIT"
+        bigint destination_account_id FK "NULL for WITHDRAWAL"
         bigint performed_by_user_id FK
+        string remarks
+        datetime created_at "INDEX"
+    }
+
+    AUDIT_LOG {
+        bigint audit_id PK
+        bigint actor_user_id FK "NULLable"
+        string action_type "INDEX"
+        string target_entity_type
+        string target_entity_id
+        string description
+        string result "SUCCESS, FAILURE"
+        json metadata
+        datetime created_at "INDEX"
+    }
+
+    FRAUD_OUTBOX_EVENT {
+        bigint event_id PK
+        bigint transaction_id FK "UNIQUE (ON DELETE RESTRICT)"
+        string event_type "TRANSFER, WITHDRAWAL, DEPOSIT"
+        json payload "Transaction evaluation context"
+        string status "PENDING, PROCESSING, COMPLETED, FAILED"
+        int attempt_count
+        datetime next_attempt_at "INDEX (status, next_attempt_at)"
+        datetime locked_at "INDEX (status, locked_at)"
+        string locked_by "Worker ID lease owner"
+        string last_error "Sanitized error message"
         datetime created_at
+        datetime updated_at
+    }
+
+    TRANSACTION_RISK_ASSESSMENT {
+        ObjectId _id PK
+        int transactionId UK "Ref: bank_transactions.transaction_id"
+        int customerId "INDEX"
+        int accountId
+        string transactionType
+        long amount "Integer paise (1 INR = 100 paise)"
+        int riskScore "0 to 100"
+        string riskLevel "LOW, MEDIUM, HIGH, CRITICAL"
+        array triggeredRules "Rule code, points, description"
+        string decision "APPROVED, REVIEW_REQUIRED, FLAGGED"
+        date assessedAt "INDEX"
+    }
+
+    FRAUD_ALERT {
+        ObjectId _id PK
+        int transactionId UK "Ref: bank_transactions.transaction_id"
+        int customerId
+        int accountId
+        int riskScore "0 to 100"
+        string riskLevel "INDEX: LOW, MEDIUM, HIGH, CRITICAL"
+        string status "INDEX: OPEN, UNDER_REVIEW, RESOLVED, FALSE_POSITIVE"
+        array reasons "Descriptions of triggered rules"
+        date createdAt "INDEX"
+        date updatedAt
+    }
+
+    FRAUD_RULE {
+        ObjectId _id PK
+        string ruleCode UK "HIGH_AMOUNT, HIGH_VELOCITY, etc."
+        string name
+        string description
+        bool enabled "INDEX"
+        long threshold "Integer paise for monetary rules"
+        int weight "Points (0 to 100)"
+        object config "windowMinutes, startHour, endHour, timezone"
+        date createdAt
+        date updatedAt
+    }
+
+    FRAUD_INVESTIGATION {
+        ObjectId _id PK
+        ObjectId alertId UK "Ref: fraud_alerts._id"
+        int transactionId UK "Ref: bank_transactions.transaction_id"
+        int assignedEmployeeId "INDEX"
+        string status "INDEX: OPEN, UNDER_REVIEW, IN_PROGRESS, RESOLVED, FALSE_POSITIVE, CLOSED"
+        array notes "Append-only operational log entries"
+        string resolution "Final case outcome"
+        date createdAt
+        date updatedAt
     }
 ```
 
-### Notes
-
-| Design Point | Reason | Requirement |
-|---|---|---|
-| Each table has a primary key, and `username`, `account_number` and `transaction_ref` are unique | Unique identifiers enforced by the database | FR-08, FR-18, NFR-16 |
-| `balance` and `amount` use `DECIMAL(15,2)`, not floating point | Exact money arithmetic without rounding errors | NFR-08, NFR-17 |
-| `CHECK (balance >= 0)` and `CHECK (amount > 0)` | The database also rejects invalid values, as a second line of defence after input validation | FR-14, NFR-18 |
-| Mandatory columns are `NOT NULL` | Incomplete records cannot be stored | NFR-18 |
-| `password_hash` stores only the salted hash | Passwords are never stored in plain text | NFR-01 |
-| The table is named `BANK_TRANSACTION` | `TRANSACTION` is a reserved word in SQL | — |
-| `BANK_TRANSACTION` rows are insert-only (no update or delete operation is provided) | Transaction records cannot be changed after they are written | NFR-10 |
-| Administrators are `USER` rows with role `ADMIN` and no extra profile table | Administrators need only login details (SRS A-07) | FR-03 |
-
-## 2. Account Status State Diagram
+## 2. Account Status State Machine
 
 ```mermaid
 stateDiagram-v2
@@ -89,17 +173,31 @@ stateDiagram-v2
     INACTIVE --> ACTIVE : Activate (FR-10)
 
     note right of ACTIVE
-        Deposits, withdrawals and
-        transfers allowed
+        Deposits, withdrawals, and
+        transfers permitted
     end note
     note right of FROZEN
-        No financial transactions (FR-11).
-        Account can still be viewed.
+        No financial transactions permitted (FR-11).
+        Account details and history readable.
+    end note
+    note right of INACTIVE
+        Account retired. No transactions permitted.
     end note
 ```
 
-| Status | Financial Transactions | Viewable | Changed By |
-|---|---|---|---|
-| ACTIVE | Allowed | Yes | Bank Employee |
-| FROZEN | Rejected with `ACC_001` (FR-11) | Yes (SRS A-09) | Bank Employee |
-| INACTIVE | Rejected with `ACC_001` (FR-11) | Yes (SRS A-09) | Bank Employee |
+## 3. Fraud Investigation Lifecycle State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> OPEN : Alert generated (Triggered rules > 0)
+    OPEN --> UNDER_REVIEW : Employee/Admin begins review
+    OPEN --> IN_PROGRESS : Investigation actively assigned
+    UNDER_REVIEW --> IN_PROGRESS : Additional evidence gathering
+    IN_PROGRESS --> UNDER_REVIEW : Pending external verification
+    UNDER_REVIEW --> RESOLVED : Confirmed fraudulent activity
+    IN_PROGRESS --> RESOLVED : Confirmed fraudulent activity
+    UNDER_REVIEW --> FALSE_POSITIVE : Verified legitimate customer transfer
+    IN_PROGRESS --> FALSE_POSITIVE : Verified legitimate customer transfer
+    RESOLVED --> CLOSED : Archived after remediation
+    FALSE_POSITIVE --> CLOSED : Archived as benign activity
+```
