@@ -28,6 +28,8 @@ const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const app = require('../src/app');
 const { pool, query, testConnection } = require('../src/config/db');
+const { loginAs, loginAndGetUser } = require('./helpers/authHelper');
+const { getLatestOtpForChallenge } = require('../src/services/otpService');
 
 // Shared baseline dummy test password
 const TEST_PASSWORD = 'Password123!';
@@ -59,6 +61,11 @@ describe('Authentication & Authorization Suite (Issue #5)', () => {
       [hash]
     );
     tempDeactSessionUserId = deactRes.insertId;
+
+    await pool.execute(
+      "INSERT INTO customers (user_id, full_name, email, phone, date_of_birth, address) VALUES (?, 'Mid Session Temp', 'mid_session@example.com', '555-9999', '1990-01-01', '123 Test St')",
+      [tempDeactSessionUserId]
+    );
   });
 
   after(async () => {
@@ -68,6 +75,7 @@ describe('Authentication & Authorization Suite (Issue #5)', () => {
         await pool.execute('DELETE FROM users WHERE user_id = ?', [tempInactiveUserId]);
       }
       if (tempDeactSessionUserId) {
+        await pool.execute('DELETE FROM customers WHERE user_id = ?', [tempDeactSessionUserId]);
         await pool.execute('DELETE FROM users WHERE user_id = ?', [tempDeactSessionUserId]);
       }
     } finally {
@@ -79,49 +87,49 @@ describe('Authentication & Authorization Suite (Issue #5)', () => {
   // Scenario 1: Successful login for customer, employee, and admin test users
   // ----------------------------------------------------------------------------
   describe('1. Successful Login for Customer, Employee, and Admin', () => {
-    it('should log in customer (test.customer1) and return safe profile with session cookie', async () => {
-      const res = await request(app)
+    it('should complete 2FA login for customer (test.customer1) and return safe profile with session cookie', async () => {
+      const loginRes = await request(app)
         .post('/api/auth/login')
         .send({ username: 'test.customer1', password: TEST_PASSWORD });
 
-      assert.equal(res.status, 200);
-      assert.equal(res.body.success, true);
-      assert.equal(res.body.data.username, 'test.customer1');
-      assert.equal(res.body.data.role, 'CUSTOMER');
-      assert.equal(res.body.data.displayName, 'Test Customer One');
-      assert.ok(res.body.data.userId);
-      assert.equal(res.body.data.password, undefined);
-      assert.equal(res.body.data.password_hash, undefined);
+      assert.equal(loginRes.status, 200);
+      assert.equal(loginRes.body.success, true);
+      assert.ok(loginRes.body.data.challengeId);
+      assert.ok(loginRes.body.data.maskedEmail);
+
+      const otp = getLatestOtpForChallenge(loginRes.body.data.challengeId);
+      const verifyRes = await request(app)
+        .post('/api/auth/verify-otp')
+        .send({ challengeId: loginRes.body.data.challengeId, otp });
+
+      assert.equal(verifyRes.status, 200);
+      assert.equal(verifyRes.body.success, true);
+      assert.equal(verifyRes.body.data.username, 'test.customer1');
+      assert.equal(verifyRes.body.data.role, 'CUSTOMER');
+      assert.equal(verifyRes.body.data.displayName, 'Test Customer One');
+      assert.ok(verifyRes.body.data.userId);
+      assert.equal(verifyRes.body.data.password, undefined);
+      assert.equal(verifyRes.body.data.password_hash, undefined);
 
       // Verify session cookie was set
-      const cookies = res.headers['set-cookie'];
-      assert.ok(cookies && cookies.length > 0, 'Session cookie must be set on login');
+      const cookies = verifyRes.headers['set-cookie'];
+      assert.ok(cookies && cookies.length > 0, 'Session cookie must be set on verify-otp');
       assert.ok(cookies[0].includes('bms.sid'), 'Cookie name must be bms.sid');
       assert.ok(cookies[0].toLowerCase().includes('httponly'), 'Cookie must be httpOnly');
     });
 
-    it('should log in employee (test.employee1) and return employee display name', async () => {
-      const res = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.employee1', password: TEST_PASSWORD });
-
-      assert.equal(res.status, 200);
-      assert.equal(res.body.success, true);
-      assert.equal(res.body.data.username, 'test.employee1');
-      assert.equal(res.body.data.role, 'EMPLOYEE');
-      assert.equal(res.body.data.displayName, 'Test Employee One');
+    it('should complete 2FA login for employee (test.employee1) and return employee display name', async () => {
+      const { user } = await loginAndGetUser(request, app, 'test.employee1', TEST_PASSWORD);
+      assert.equal(user.username, 'test.employee1');
+      assert.equal(user.role, 'EMPLOYEE');
+      assert.equal(user.displayName, 'Test Employee One');
     });
 
-    it('should log in administrator (test.admin1) and return "Administrator" display name', async () => {
-      const res = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.admin1', password: TEST_PASSWORD });
-
-      assert.equal(res.status, 200);
-      assert.equal(res.body.success, true);
-      assert.equal(res.body.data.username, 'test.admin1');
-      assert.equal(res.body.data.role, 'ADMIN');
-      assert.equal(res.body.data.displayName, 'Administrator');
+    it('should complete 2FA login for administrator (test.admin1) and return "Administrator" display name', async () => {
+      const { user } = await loginAndGetUser(request, app, 'test.admin1', TEST_PASSWORD);
+      assert.equal(user.username, 'test.admin1');
+      assert.equal(user.role, 'ADMIN');
+      assert.equal(user.displayName, 'Administrator');
     });
   });
 
@@ -223,10 +231,7 @@ describe('Authentication & Authorization Suite (Issue #5)', () => {
 
     it('should return safe profile for authenticated session and survive re-request', async () => {
       // 1. Login to establish session
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.customer1', password: TEST_PASSWORD });
-      const cookie = loginRes.headers['set-cookie'];
+      const cookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
 
       // 2. Request /api/auth/me using session cookie (simulating browser request/refresh)
       const meRes = await request(app)
@@ -254,11 +259,8 @@ describe('Authentication & Authorization Suite (Issue #5)', () => {
     });
 
     it('should destroy session on logout and reject subsequent requests with old session cookie', async () => {
-      // 1. Login
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.customer1', password: TEST_PASSWORD });
-      const cookie = loginRes.headers['set-cookie'];
+      // 1. Login via OTP
+      const cookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
 
       // 2. Logout
       const logoutRes = await request(app)
@@ -289,14 +291,9 @@ describe('Authentication & Authorization Suite (Issue #5)', () => {
     let adminCookie;
 
     before(async () => {
-      const cRes = await request(app).post('/api/auth/login').send({ username: 'test.customer1', password: TEST_PASSWORD });
-      customerCookie = cRes.headers['set-cookie'];
-
-      const eRes = await request(app).post('/api/auth/login').send({ username: 'test.employee1', password: TEST_PASSWORD });
-      employeeCookie = eRes.headers['set-cookie'];
-
-      const aRes = await request(app).post('/api/auth/login').send({ username: 'test.admin1', password: TEST_PASSWORD });
-      adminCookie = aRes.headers['set-cookie'];
+      customerCookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
+      employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
+      adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
     });
 
     it('CUSTOMER can access customer route, but rejected from employee and admin routes with AUTH_002', async () => {
@@ -352,11 +349,7 @@ describe('Authentication & Authorization Suite (Issue #5)', () => {
   describe('11. Dynamic Deactivation during Active Session (FR-24)', () => {
     it('should invalidate active session immediately when user is deactivated in database', async () => {
       // 1. Log in while active
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.mid_session_temp', password: TEST_PASSWORD });
-      assert.equal(loginRes.status, 200);
-      const cookie = loginRes.headers['set-cookie'];
+      const cookie = await loginAs(request, app, 'test.mid_session_temp', TEST_PASSWORD);
 
       // 2. Verify protected access succeeds while ACTIVE
       const activeRes = await request(app)
@@ -418,16 +411,22 @@ describe('Authentication & Authorization Suite (Issue #5)', () => {
       const loginRes = await request(app)
         .post('/api/auth/login')
         .send({ username: 'test.admin1', password: TEST_PASSWORD });
-      const cookie = loginRes.headers['set-cookie'];
+      const otp = getLatestOtpForChallenge(loginRes.body.data.challengeId);
+      const verifyRes = await request(app)
+        .post('/api/auth/verify-otp')
+        .send({ challengeId: loginRes.body.data.challengeId, otp });
+      const cookie = verifyRes.headers['set-cookie'];
 
       const meRes = await request(app)
         .get('/api/auth/me')
         .set('Cookie', cookie);
 
       const loginBodyStr = JSON.stringify(loginRes.body).toLowerCase();
+      const verifyBodyStr = JSON.stringify(verifyRes.body).toLowerCase();
       const meBodyStr = JSON.stringify(meRes.body).toLowerCase();
 
       assert.ok(!loginBodyStr.includes('password_hash'), 'Login response must not contain password_hash');
+      assert.ok(!verifyBodyStr.includes('password_hash'), 'Verify response must not contain password_hash');
       assert.ok(!meBodyStr.includes('password_hash'), 'Me response must not contain password_hash');
       assert.ok(!loginBodyStr.includes(TEST_PASSWORD.toLowerCase()), 'Login response must not contain plain password');
     });

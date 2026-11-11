@@ -23,6 +23,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
 const { query, pool, testConnection } = require('../src/config/db');
+const { loginAndGetUser } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -41,12 +42,9 @@ describe('Employee Console UI & Workflow Improvements Suite (Feature 1)', () => 
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
     // Log in as test Employee
-    const empLoginRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empLoginRes.status, 200);
-    employeeCookie = empLoginRes.headers['set-cookie'];
-    employeeUserId = empLoginRes.body.data.userId;
+    const emp = await loginAndGetUser(request, app, 'test.employee1', TEST_PASSWORD);
+    employeeCookie = emp.cookie;
+    employeeUserId = emp.user.userId;
 
     // Create a dedicated active account for testing
     const createRes = await request(app)
@@ -107,16 +105,23 @@ describe('Employee Console UI & Workflow Improvements Suite (Feature 1)', () => 
   after(async () => {
     try {
       if (createdAccountIds.length > 0) {
+        const ph = createdAccountIds.map(() => '?').join(',');
         await query(
-          `DELETE FROM bank_transactions WHERE source_account_id IN (${createdAccountIds.map(() => '?').join(',')}) OR destination_account_id IN (${createdAccountIds.map(() => '?').join(',')})`,
+          `DELETE foe FROM fraud_outbox_events foe
+           JOIN bank_transactions bt ON foe.transaction_id = bt.transaction_id
+           WHERE bt.source_account_id IN (${ph}) OR bt.destination_account_id IN (${ph})`,
+          [...createdAccountIds, ...createdAccountIds]
+        ).catch(() => {});
+        await query(
+          `DELETE FROM bank_transactions WHERE source_account_id IN (${ph}) OR destination_account_id IN (${ph})`,
           [...createdAccountIds, ...createdAccountIds]
         );
         await query(
-          `DELETE FROM audit_logs WHERE target_entity_type = 'ACCOUNT' AND target_entity_id IN (${createdAccountIds.map(() => '?').join(',')})`,
+          `DELETE FROM audit_logs WHERE target_entity_type = 'ACCOUNT' AND target_entity_id IN (${ph})`,
           createdAccountIds
         );
         await query(
-          `DELETE FROM accounts WHERE account_id IN (${createdAccountIds.map(() => '?').join(',')})`,
+          `DELETE FROM accounts WHERE account_id IN (${ph})`,
           createdAccountIds
         );
       }

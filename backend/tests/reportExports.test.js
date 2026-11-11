@@ -19,6 +19,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
 const { pool, testConnection } = require('../src/config/db');
+const { loginAs } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -48,25 +49,13 @@ describe('Feature 4: Administrator Report Export Suite', () => {
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
     // Authenticate Admin
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200, 'Admin login must succeed');
-    adminCookie = adminRes.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
 
     // Authenticate Employee
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200, 'Employee login must succeed');
-    employeeCookie = empRes.headers['set-cookie'];
+    employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
 
     // Authenticate Customer
-    const custRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(custRes.status, 200, 'Customer login must succeed');
-    customerCookie = custRes.headers['set-cookie'];
+    customerCookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
 
     // Create a special customer with commas and quotes in name for RFC 4180 escaping verification
     const now = Date.now();
@@ -133,6 +122,7 @@ describe('Feature 4: Administrator Report Export Suite', () => {
     try {
       if (createdTransactionIds.length > 0) {
         const ph = createdTransactionIds.map(() => '?').join(',');
+        await pool.execute(`DELETE FROM fraud_outbox_events WHERE transaction_id IN (${ph})`, createdTransactionIds).catch(() => {});
         await pool.execute(`DELETE FROM bank_transactions WHERE transaction_id IN (${ph})`, createdTransactionIds);
       }
       if (createdAccountIds.length > 0) {

@@ -29,6 +29,7 @@ const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const app = require('../src/app');
 const { pool, query, testConnection, withTransaction } = require('../src/config/db');
+const { loginAs, loginAndGetUser } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -48,25 +49,13 @@ describe('Employee Administration Suite (Issue #11)', () => {
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
     // Log in as Admin (test.admin1) to capture admin session cookie
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
 
     // Log in as Employee (test.employee1) to capture employee session cookie
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200);
-    employeeCookie = empRes.headers['set-cookie'];
+    employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
 
     // Log in as Customer (test.customer1) to capture customer session cookie
-    const custRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(custRes.status, 200);
-    customerCookie = custRes.headers['set-cookie'];
+    customerCookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
   });
 
   after(async () => {
@@ -213,14 +202,9 @@ describe('Employee Administration Suite (Issue #11)', () => {
     });
 
     it('should allow the newly created employee to log in successfully', async () => {
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.staff_alpha', password: TEST_PASSWORD });
-
-      assert.equal(loginRes.status, 200);
-      assert.equal(loginRes.body.success, true);
-      assert.equal(loginRes.body.data.role, 'EMPLOYEE');
-      assert.equal(loginRes.body.data.displayName, 'Test Staff Alpha');
+      const { user } = await loginAndGetUser(request, app, 'test.staff_alpha', TEST_PASSWORD);
+      assert.equal(user.role, 'EMPLOYEE');
+      assert.equal(user.displayName, 'Test Staff Alpha');
     });
 
     it('should enforce role EMPLOYEE even if request specifies ADMIN or CUSTOMER', async () => {
@@ -639,11 +623,7 @@ describe('Employee Administration Suite (Issue #11)', () => {
       deactUserId = res.body.data.userId;
 
       // Log in as the new employee to establish an active session
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.deact_staff', password: TEST_PASSWORD });
-      assert.equal(loginRes.status, 200);
-      deactEmpCookie = loginRes.headers['set-cookie'];
+      deactEmpCookie = await loginAs(request, app, 'test.deact_staff', TEST_PASSWORD);
 
       // Verify active session works initially
       const meRes = await request(app)
@@ -700,11 +680,8 @@ describe('Employee Administration Suite (Issue #11)', () => {
       assert.equal(res.body.data.status, 'ACTIVE');
 
       // Verify reactivated employee can log in again
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.deact_staff', password: TEST_PASSWORD });
-      assert.equal(loginRes.status, 200);
-      assert.equal(loginRes.body.data.role, 'EMPLOYEE');
+      const { user } = await loginAndGetUser(request, app, 'test.deact_staff', TEST_PASSWORD);
+      assert.equal(user.role, 'EMPLOYEE');
     });
 
     it('should reject invalid status with VAL_001 (400)', async () => {
@@ -891,11 +868,7 @@ describe('Employee Administration Suite (Issue #11)', () => {
 
     it('should update lastLogin timestamp after successful employee authentication', async () => {
       // Log in with the newly created employee
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.f3_staff_login', password: TEST_PASSWORD });
-
-      assert.equal(loginRes.status, 200);
+      await loginAs(request, app, 'test.f3_staff_login', TEST_PASSWORD);
 
       const getRes = await request(app)
         .get(`/api/employees/${createdEmpId}`)
@@ -935,12 +908,7 @@ describe('Employee Administration Suite (Issue #11)', () => {
       createdUserIds.push(revokeUserId);
 
       // 2. Employee logs in and establishes active session
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.f3_staff_revoke', password: TEST_PASSWORD });
-
-      assert.equal(loginRes.status, 200);
-      const activeEmpCookie = loginRes.headers['set-cookie'];
+      const activeEmpCookie = await loginAs(request, app, 'test.f3_staff_revoke', TEST_PASSWORD);
 
       // 3. Verify session works
       const meBefore = await request(app)
@@ -967,10 +935,8 @@ describe('Employee Administration Suite (Issue #11)', () => {
       assert.equal(meAfter.body.errorCode, 'AUTH_003');
 
       // 6. Employee can authenticate again with fresh credentials
-      const reloginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.f3_staff_revoke', password: TEST_PASSWORD });
-      assert.equal(reloginRes.status, 200);
+      const reloginCookie = await loginAs(request, app, 'test.f3_staff_revoke', TEST_PASSWORD);
+      assert.ok(reloginCookie);
     });
 
     it('should reject unauthenticated request to POST /revoke-sessions with AUTH_003 (401)', async () => {

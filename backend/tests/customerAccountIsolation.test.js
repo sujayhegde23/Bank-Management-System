@@ -28,6 +28,7 @@ const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const app = require('../src/app');
 const { pool, query, testConnection } = require('../src/config/db');
+const { loginAs, createDirectSessionCookie } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -63,25 +64,13 @@ describe('Critical Security Suite: Customer Account Data Isolation', () => {
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
     // 1. Authenticate Admin
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
 
     // 2. Authenticate Employee
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200);
-    employeeCookie = empRes.headers['set-cookie'];
+    employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
 
     // 3. Authenticate Customer A (test.customer1)
-    const custARes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(custARes.status, 200);
-    customerACookie = custARes.headers['set-cookie'];
+    customerACookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
 
     const meARes = await request(app)
       .get('/api/auth/me')
@@ -91,11 +80,7 @@ describe('Critical Security Suite: Customer Account Data Isolation', () => {
     assert.ok(customerAId, 'Customer A must have a valid customerId');
 
     // 4. Authenticate Customer B (test.customer2)
-    const custBRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer2', password: TEST_PASSWORD });
-    assert.equal(custBRes.status, 200);
-    customerBCookie = custBRes.headers['set-cookie'];
+    customerBCookie = await loginAs(request, app, 'test.customer2', TEST_PASSWORD);
 
     const meBRes = await request(app)
       .get('/api/auth/me')
@@ -165,11 +150,12 @@ describe('Critical Security Suite: Customer Account Data Isolation', () => {
     const unlinkedUserId = unlinkedUserRes.insertId;
     createdUserIds.push(unlinkedUserId);
 
-    const unlinkedLoginRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: `unlinked_cust_${suffix}`, password: TEST_PASSWORD });
-    assert.equal(unlinkedLoginRes.status, 200);
-    unlinkedCustCookie = unlinkedLoginRes.headers['set-cookie'];
+    unlinkedCustCookie = await createDirectSessionCookie({
+      userId: unlinkedUserId,
+      username: `unlinked_cust_${suffix}`,
+      role: 'CUSTOMER',
+      displayName: `unlinked_cust_${suffix}`
+    });
   });
 
   after(async () => {

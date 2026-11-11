@@ -25,7 +25,8 @@ function sanitizeMetadata(meta) {
     return null;
   }
   const clean = Array.isArray(meta) ? [] : {};
-  const sensitiveRegex = /password|hash|token|secret|session|cookie/i;
+  // Extended credential and 2FA secret stripping (passwords, hashes, tokens, secrets, session IDs, cookies, OTPs, PINs, SMTP credentials)
+  const sensitiveRegex = /password|hash|token|secret|session|cookie|otp|pin|passcode|challenge.*secret|smtp/i;
 
   for (const [key, val] of Object.entries(meta)) {
     if (sensitiveRegex.test(key)) {

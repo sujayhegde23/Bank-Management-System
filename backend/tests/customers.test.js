@@ -20,6 +20,7 @@ const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const app = require('../src/app');
 const { pool, query, testConnection, withTransaction } = require('../src/config/db');
+const { loginAs, loginAndGetUser } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -40,32 +41,16 @@ describe('Customer Registration and Profile Management Suite (Issue #6)', () => 
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
     // Log in as Admin
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
 
     // Log in as Employee
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200);
-    employeeCookie = empRes.headers['set-cookie'];
+    employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
 
     // Log in as Customer 1 (customer_id: 1)
-    const cust1Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(cust1Res.status, 200);
-    customer1Cookie = cust1Res.headers['set-cookie'];
+    customer1Cookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
 
     // Log in as Customer 2 (customer_id: 2)
-    const cust2Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer2', password: TEST_PASSWORD });
-    assert.equal(cust2Res.status, 200);
-    customer2Cookie = cust2Res.headers['set-cookie'];
+    customer2Cookie = await loginAs(request, app, 'test.customer2', TEST_PASSWORD);
   });
 
   after(async () => {
@@ -135,11 +120,8 @@ describe('Customer Registration and Profile Management Suite (Issue #6)', () => 
       assert.ok(isMatch, 'Stored password must be a valid bcrypt hash matching the input password');
 
       // Verify new customer can immediately log in
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: newCustData.username, password: newCustData.password });
-      assert.equal(loginRes.status, 200);
-      assert.equal(loginRes.body.data.role, 'CUSTOMER');
+      const { user } = await loginAndGetUser(request, app, newCustData.username, newCustData.password);
+      assert.equal(user.role, 'CUSTOMER');
 
       // Verify NO bank accounts were auto-created (AC-1)
       const accountsDb = await query('SELECT * FROM accounts WHERE customer_id = ?', [res.body.data.customerId]);
@@ -515,11 +497,7 @@ describe('Customer Registration and Profile Management Suite (Issue #6)', () => 
       createdUserIds.push(testUserId);
 
       // Log in as this test customer
-      const logRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username, password });
-      assert.equal(logRes.status, 200);
-      testCustCookie = logRes.headers['set-cookie'];
+      testCustCookie = await loginAs(request, app, username, password);
     });
 
     it('should allow Employee to update identity & contact details (FR-06)', async () => {

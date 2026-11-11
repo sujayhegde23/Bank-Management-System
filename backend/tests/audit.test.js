@@ -23,6 +23,8 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
 const { pool, testConnection } = require('../src/config/db');
+const { loginAs, loginAndGetUser } = require('./helpers/authHelper');
+const { getLatestOtpForChallenge } = require('../src/services/otpService');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -48,29 +50,20 @@ describe('Centralized Audit Logs & Activity Monitoring Suite (Feature 2)', () =>
     isDbLive = status.connected;
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
-    // Authenticate Admin
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
-    adminUserId = adminRes.body.data.userId;
+    // Authenticate Admin via 2FA OTP flow
+    const adminAuth = await loginAndGetUser(request, app, 'test.admin1', TEST_PASSWORD);
+    adminCookie = adminAuth.cookie;
+    adminUserId = adminAuth.user.userId;
 
-    // Authenticate Employee
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200);
-    employeeCookie = empRes.headers['set-cookie'];
-    employeeUserId = empRes.body.data.userId;
+    // Authenticate Employee via 2FA OTP flow
+    const empAuth = await loginAndGetUser(request, app, 'test.employee1', TEST_PASSWORD);
+    employeeCookie = empAuth.cookie;
+    employeeUserId = empAuth.user.userId;
 
-    // Authenticate Customer
-    const custRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(custRes.status, 200);
-    customerCookie = custRes.headers['set-cookie'];
-    customerUserId = custRes.body.data.userId;
+    // Authenticate Customer via 2FA OTP flow
+    const custAuth = await loginAndGetUser(request, app, 'test.customer1', TEST_PASSWORD);
+    customerCookie = custAuth.cookie;
+    customerUserId = custAuth.user.userId;
 
     // Setup an isolated test account for auditing tests
     const now = Date.now();
@@ -90,12 +83,19 @@ describe('Centralized Audit Logs & Activity Monitoring Suite (Feature 2)', () =>
     try {
       // Clean up created accounts
       if (createdAccountIds.length > 0) {
+        const placeholders = createdAccountIds.map(() => '?').join(',');
         await pool.execute(
-          `DELETE FROM bank_transactions WHERE source_account_id IN (${createdAccountIds.map(() => '?').join(',')}) OR destination_account_id IN (${createdAccountIds.map(() => '?').join(',')})`,
+          `DELETE foe FROM fraud_outbox_events foe
+           JOIN bank_transactions bt ON foe.transaction_id = bt.transaction_id
+           WHERE bt.source_account_id IN (${placeholders}) OR bt.destination_account_id IN (${placeholders})`,
           [...createdAccountIds, ...createdAccountIds]
         );
         await pool.execute(
-          `DELETE FROM accounts WHERE account_id IN (${createdAccountIds.map(() => '?').join(',')})`,
+          `DELETE FROM bank_transactions WHERE source_account_id IN (${placeholders}) OR destination_account_id IN (${placeholders})`,
+          [...createdAccountIds, ...createdAccountIds]
+        );
+        await pool.execute(
+          `DELETE FROM accounts WHERE account_id IN (${placeholders})`,
           createdAccountIds
         );
       }
@@ -257,10 +257,7 @@ describe('Centralized Audit Logs & Activity Monitoring Suite (Feature 2)', () =>
   // ============================================================================
   describe('4. Lifecycle Operations Auditing (Success and Failure Outcomes)', () => {
     it('should audit successful user login (USER_LOGIN)', async () => {
-      const loginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: 'test.admin1', password: TEST_PASSWORD });
-      assert.equal(loginRes.status, 200);
+      await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
 
       const auditRes = await request(app)
         .get('/api/audit-logs?actionType=USER_LOGIN&limit=5')
@@ -295,11 +292,17 @@ describe('Centralized Audit Logs & Activity Monitoring Suite (Feature 2)', () =>
     });
 
     it('should audit user logout (USER_LOGOUT)', async () => {
-      // Create session, then log out
+      // Create session via OTP flow, then log out
       const agent = request.agent(app);
-      await agent
+      const loginRes = await agent
         .post('/api/auth/login')
         .send({ username: 'test.employee1', password: TEST_PASSWORD });
+      assert.equal(loginRes.status, 200);
+      const otp = getLatestOtpForChallenge(loginRes.body.data.challengeId);
+      const verifyRes = await agent
+        .post('/api/auth/verify-otp')
+        .send({ challengeId: loginRes.body.data.challengeId, otp });
+      assert.equal(verifyRes.status, 200);
 
       const logoutRes = await agent.post('/api/auth/logout');
       assert.equal(logoutRes.status, 200);
@@ -562,6 +565,11 @@ describe('Centralized Audit Logs & Activity Monitoring Suite (Feature 2)', () =>
         .post('/api/auth/login')
         .send({ username: tempUsername, password: TEST_PASSWORD });
       assert.equal(loginRes.status, 200);
+      const tempOtp = getLatestOtpForChallenge(loginRes.body.data.challengeId);
+      const verifyRes = await agent
+        .post('/api/auth/verify-otp')
+        .send({ challengeId: loginRes.body.data.challengeId, otp: tempOtp });
+      assert.equal(verifyRes.status, 200);
 
       // Perform a deposit
       const depRes = await agent

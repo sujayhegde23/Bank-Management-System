@@ -220,7 +220,7 @@ describe('Fraud Detection Pipeline Bug Investigation Verification Suite', () => 
       await query(
         `INSERT INTO bank_transactions
          (transaction_id, transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks, created_at)
-         VALUES (?, ?, 'TRANSFER', 500.00, 1, 184, 4, 'Account 1 transfer', NOW())`,
+         VALUES (?, ?, 'TRANSFER', 500.00, 1, 2, 4, 'Account 1 transfer', NOW())`,
         [txAcc1, `TXN-ISO-${txAcc1}`]
       );
       createdTxnIds.push(txAcc1);
@@ -235,13 +235,19 @@ describe('Fraud Detection Pipeline Bug Investigation Verification Suite', () => 
   // ============================================================================
   describe('3. Integration, Outbox Worker & Alert Generation', () => {
     it('Large transfer triggers HIGH_AMOUNT and persists risk assessment with decision REVIEW_REQUIRED', async () => {
-      // Pre-seed an established transfer history between Account 1 and Account 184
+      // Clean up Section 2 velocity test transactions to ensure clean velocity isolation for Account 1
+      await query(
+        `DELETE FROM bank_transactions WHERE transaction_id IN (?, ?, ?, ?)`,
+        [TEST_BASE_ID + 10, TEST_BASE_ID + 11, TEST_BASE_ID + 20, TEST_BASE_ID + 21]
+      );
+
+      // Pre-seed an established transfer history between Account 1 and Account 2
       // so NEW_BENEFICIARY is false and HIGH_AMOUNT is verified in isolation (Score = 30)
       const priorTxId = TEST_BASE_ID + 29;
       await query(
         `INSERT INTO bank_transactions
          (transaction_id, transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks, created_at)
-         VALUES (?, ?, 'TRANSFER', 500.00, 1, 184, 4, 'Prior established transfer', DATE_SUB(NOW(), INTERVAL 1 HOUR))`,
+         VALUES (?, ?, 'TRANSFER', 500.00, 1, 2, 4, 'Prior established transfer', DATE_SUB(NOW(), INTERVAL 1 HOUR))`,
         [priorTxId, `TXN-PRIOR-${priorTxId}`]
       );
       createdTxnIds.push(priorTxId);
@@ -250,7 +256,7 @@ describe('Fraud Detection Pipeline Bug Investigation Verification Suite', () => 
       await query(
         `INSERT INTO bank_transactions
          (transaction_id, transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks, created_at)
-         VALUES (?, ?, 'TRANSFER', 60000.00, 1, 184, 4, 'Integration ₹60,000 transfer', NOW())`,
+         VALUES (?, ?, 'TRANSFER', 60000.00, 1, 2, 4, 'Integration ₹60,000 transfer', NOW())`,
         [intTxId, `TXN-INT-${intTxId}`]
       );
       createdTxnIds.push(intTxId);

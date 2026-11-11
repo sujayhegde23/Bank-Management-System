@@ -33,6 +33,8 @@ router.get('/', (req, res) => {
       endpoints: {
         health: 'GET /api/health',
         login: 'POST /api/auth/login',
+        verifyOtp: 'POST /api/auth/verify-otp',
+        resendOtp: 'POST /api/auth/resend-otp',
         logout: 'POST /api/auth/logout',
         me: 'GET /api/auth/me',
         employees: 'GET /api/employees, POST /api/employees, PUT /api/employees/:id, PATCH /api/employees/:id/status',

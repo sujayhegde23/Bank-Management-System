@@ -17,6 +17,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
 const { pool, testConnection } = require('../src/config/db');
+const { loginAs } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -46,29 +47,10 @@ describe('Transaction Records and History Suite (Issue #10)', () => {
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
     // Authenticate test roles
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
-
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200);
-    employeeCookie = empRes.headers['set-cookie'];
-
-    const cust1Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(cust1Res.status, 200);
-    customer1Cookie = cust1Res.headers['set-cookie'];
-
-    const cust2Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer2', password: TEST_PASSWORD });
-    assert.equal(cust2Res.status, 200);
-    customer2Cookie = cust2Res.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
+    employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
+    customer1Cookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
+    customer2Cookie = await loginAs(request, app, 'test.customer2', TEST_PASSWORD);
 
     // Create fresh test accounts with unique numbers
     const now = Date.now();
@@ -105,6 +87,12 @@ describe('Transaction Records and History Suite (Issue #10)', () => {
     try {
       if (createdAccountIds.length > 0) {
         const placeholders = createdAccountIds.map(() => '?').join(',');
+        await pool.execute(
+          `DELETE foe FROM fraud_outbox_events foe
+           JOIN bank_transactions bt ON foe.transaction_id = bt.transaction_id
+           WHERE bt.source_account_id IN (${placeholders}) OR bt.destination_account_id IN (${placeholders})`,
+          [...createdAccountIds, ...createdAccountIds]
+        ).catch(() => {});
         await pool.execute(
           `DELETE FROM bank_transactions
            WHERE source_account_id IN (${placeholders}) OR destination_account_id IN (${placeholders})`,

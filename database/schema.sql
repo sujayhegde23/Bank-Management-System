@@ -204,3 +204,32 @@ CREATE TABLE IF NOT EXISTS fraud_outbox_events (
     INDEX idx_outbox_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ------------------------------------------------------------------------------
+-- 8. Table: auth_otp_challenges
+-- Multi-factor authentication challenges for email-based OTP verification (Phase 1).
+-- Stores cryptographically hashed OTP tokens, verification attempt tracking,
+-- expiration timestamps, and resend rate limits.
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auth_otp_challenges (
+    challenge_id VARCHAR(64) PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    otp_hash VARCHAR(255) NOT NULL,
+    otp_salt VARCHAR(64) NULL,
+    attempts_count INT NOT NULL DEFAULT 0,
+    max_attempts INT NOT NULL DEFAULT 3,
+    status ENUM('PENDING', 'VERIFIED', 'EXPIRED', 'LOCKED') NOT NULL DEFAULT 'PENDING',
+    expires_at DATETIME NOT NULL,
+    resend_available_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_otp_challenges_user FOREIGN KEY (user_id)
+        REFERENCES users (user_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT chk_otp_attempts CHECK (attempts_count >= 0 AND max_attempts > 0),
+    INDEX idx_otp_challenges_user (user_id, created_at),
+    INDEX idx_otp_challenges_status_expires (status, expires_at),
+    INDEX idx_otp_challenges_lookup (challenge_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+

@@ -9,6 +9,8 @@ USE bank_management_system;
 
 -- Disable foreign key checks during clean reset
 SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE fraud_outbox_events;
+TRUNCATE TABLE auth_otp_challenges;
 TRUNCATE TABLE bank_transactions;
 TRUNCATE TABLE accounts;
 TRUNCATE TABLE customers;

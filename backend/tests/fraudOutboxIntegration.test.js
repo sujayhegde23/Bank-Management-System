@@ -28,6 +28,7 @@ const app = require('../src/app');
 const { pool, query } = require('../src/config/db');
 const { connectMongo, getDb, closeMongo, isMongoConnected } = require('../src/config/mongo');
 const { initializeMongoDatabase } = require('../src/config/initMongo');
+const { loginAs } = require('./helpers/authHelper');
 const {
   recordOutboxEvent,
   claimEvents,
@@ -63,11 +64,7 @@ describe('Phase 3: Fraud Detection Integration & Transactional Outbox Suite', ()
     await initializeMongoDatabase();
 
     // 2. Authenticate admin for diagnostics tests
-    const loginRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: 'Password123!' });
-    assert.equal(loginRes.status, 200);
-    adminCookie = loginRes.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', 'Password123!');
 
     // 3. Ensure test accounts have predictable baseline balance
     await pool.execute('UPDATE accounts SET balance = 500000.00 WHERE account_id = 1');

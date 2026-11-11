@@ -25,6 +25,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
 const { query, pool, testConnection } = require('../src/config/db');
+const { loginAs } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -52,33 +53,11 @@ describe('Feature 4: Customer Account Statements Enhancement Integration Tests',
     isDbLive = status.connected;
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
-    // 1. Log in as test Admin
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
-
-    // 2. Log in as test Employee
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200);
-    employeeCookie = empRes.headers['set-cookie'];
-
-    // 3. Log in as Customer 1 (customer_id: 1)
-    const cust1Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(cust1Res.status, 200);
-    customer1Cookie = cust1Res.headers['set-cookie'];
-
-    // 4. Log in as Customer 2 (customer_id: 2)
-    const cust2Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer2', password: TEST_PASSWORD });
-    assert.equal(cust2Res.status, 200);
-    customer2Cookie = cust2Res.headers['set-cookie'];
+    // Log in via 2FA OTP flow
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
+    employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
+    customer1Cookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
+    customer2Cookie = await loginAs(request, app, 'test.customer2', TEST_PASSWORD);
 
     // 5. Create Account 1 for Customer 1
     const create1 = await request(app)
