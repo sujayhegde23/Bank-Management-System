@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getSystemHealth, login, logout, getCurrentUser, getAccounts } from './services/api';
+import { getSystemHealth, login, verifyOtp, resendOtp, logout, getCurrentUser, getAccounts } from './services/api';
 import EmployeeManagement from './components/EmployeeManagement';
 import AccountManagement from './components/AccountManagement';
 import CustomerTransferModal from './components/CustomerTransferModal';
@@ -14,6 +14,7 @@ import CustomerStatements from './components/CustomerStatements';
 import CustomerProfile from './components/CustomerProfile';
 import AccountStatementModal from './components/AccountStatementModal';
 import FraudDashboard from './components/FraudDashboard';
+import OtpVerification from './components/OtpVerification';
 import './App.css';
 
 /* ==============================================================================
@@ -324,6 +325,9 @@ export default function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
+  // Two-Stage OTP Authentication State (Phase 3)
+  const [pendingChallenge, setPendingChallenge] = useState(null);
+
   // Navigation tab state: 'accounts' | 'employees' | 'diagnostics' | 'overview' | 'statements'
   const [activeNav, setActiveNav] = useState('accounts');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -474,8 +478,41 @@ export default function App() {
     setAuthError(null);
 
     try {
-      const user = await login({ username, password });
+      const challengeData = await login({ username: username.trim(), password });
+      if (challengeData?.challengeId) {
+        setPendingChallenge({
+          challengeId: challengeData.challengeId,
+          maskedEmail: challengeData.maskedEmail || 'registered email',
+          expiresInSeconds: challengeData.expiresInSeconds || 300,
+          resendAvailableInSeconds: challengeData.resendAvailableInSeconds || 60,
+          username: username.trim()
+        });
+        setPassword('');
+      } else {
+        throw new Error('Unexpected authentication response from server.');
+      }
+    } catch (err) {
+      setAuthError(err.message || 'Invalid username or password');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (otp) => {
+    if (!pendingChallenge?.challengeId) {
+      setAuthError('No active verification challenge. Please sign in again.');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError(null);
+
+    try {
+      const user = await verifyOtp({
+        challengeId: pendingChallenge.challengeId,
+        otp
+      });
       setCurrentUser(user);
+      setPendingChallenge(null);
       setPassword('');
       const initialNav = getPersistedNav(user.role);
       setActiveNav(initialNav);
@@ -483,11 +520,33 @@ export default function App() {
         sessionStorage.setItem('bms_active_nav', initialNav);
         window.history.replaceState(null, '', `#${initialNav}`);
       } catch {}
-    } catch (err) {
-      setAuthError(err.message || 'Invalid username or password');
     } finally {
       setAuthLoading(false);
     }
+  };
+
+  const handleResendOtp = async () => {
+    if (!pendingChallenge?.challengeId) {
+      throw new Error('No active verification challenge.');
+    }
+    const updated = await resendOtp({ challengeId: pendingChallenge.challengeId });
+    if (updated) {
+      setPendingChallenge((prev) => ({
+        ...prev,
+        challengeId: updated.challengeId || prev?.challengeId,
+        maskedEmail: updated.maskedEmail || prev?.maskedEmail,
+        expiresInSeconds: updated.expiresInSeconds || 300,
+        resendAvailableInSeconds: updated.resendAvailableInSeconds || 60
+      }));
+      return updated;
+    }
+    throw new Error('Failed to dispatch new verification code.');
+  };
+
+  const handleBackToLogin = () => {
+    setPendingChallenge(null);
+    setAuthError(null);
+    setPassword('');
   };
 
   const handleLogout = async () => {
@@ -497,6 +556,7 @@ export default function App() {
     try {
       await logout();
       setCurrentUser(null);
+      setPendingChallenge(null);
       setUsername('');
       setPassword('');
       setActiveNav('accounts');
@@ -527,9 +587,21 @@ export default function App() {
   );
 
   // ----------------------------------------------------------------------------
-  // SCENARIO 1: UNAUTHENTICATED (Login Screen)
+  // SCENARIO 1: UNAUTHENTICATED (Login Screen & OTP Screen)
   // ----------------------------------------------------------------------------
   if (!currentUser) {
+    if (pendingChallenge) {
+      return (
+        <OtpVerification
+          challenge={pendingChallenge}
+          onVerify={handleVerifyOtp}
+          onResend={handleResendOtp}
+          onBack={handleBackToLogin}
+          loading={authLoading}
+        />
+      );
+    }
+
     return (
       <div className="login-screen-root">
         <div className="login-screen-card">

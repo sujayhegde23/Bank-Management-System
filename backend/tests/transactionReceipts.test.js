@@ -18,6 +18,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
 const { query, pool, testConnection } = require('../src/config/db');
+const { loginAs } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -40,32 +41,16 @@ describe('Feature 2: Transaction Receipt Generation Test Suite', () => {
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
     // 1. Log in as test Admin
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
 
     // 2. Log in as test Employee
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200);
-    employeeCookie = empRes.headers['set-cookie'];
+    employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
 
     // 3. Log in as Customer 1 (customer_id: 1)
-    const cust1Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(cust1Res.status, 200);
-    customer1Cookie = cust1Res.headers['set-cookie'];
+    customer1Cookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
 
     // 4. Log in as Customer 2 (customer_id: 2)
-    const cust2Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer2', password: TEST_PASSWORD });
-    assert.equal(cust2Res.status, 200);
-    customer2Cookie = cust2Res.headers['set-cookie'];
+    customer2Cookie = await loginAs(request, app, 'test.customer2', TEST_PASSWORD);
 
     // 5. Create an active account for Customer 1
     const createRes = await request(app)
@@ -103,6 +88,13 @@ describe('Feature 2: Transaction Receipt Generation Test Suite', () => {
     try {
       if (createdAccountIds.length > 0) {
         const placeholders = createdAccountIds.map(() => '?').join(',');
+        await query(
+          `DELETE FROM fraud_outbox_events WHERE transaction_id IN (
+            SELECT transaction_id FROM bank_transactions
+            WHERE source_account_id IN (${placeholders}) OR destination_account_id IN (${placeholders})
+          )`,
+          [...createdAccountIds, ...createdAccountIds]
+        );
         await query(
           `DELETE FROM bank_transactions WHERE source_account_id IN (${placeholders}) OR destination_account_id IN (${placeholders})`,
           [...createdAccountIds, ...createdAccountIds]

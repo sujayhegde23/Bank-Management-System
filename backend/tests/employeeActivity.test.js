@@ -25,6 +25,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
 const { pool, query, testConnection } = require('../src/config/db');
+const { loginAs, loginAndGetUser } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -51,34 +52,20 @@ describe('Feature 4: Employee Personal Activity History Test Suite', () => {
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
     // 1. Authenticate Admin
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
 
     // 2. Authenticate Employee 1
-    const emp1Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(emp1Res.status, 200);
-    employee1Cookie = emp1Res.headers['set-cookie'];
-    employee1UserId = emp1Res.body.data.userId;
+    const emp1 = await loginAndGetUser(request, app, 'test.employee1', TEST_PASSWORD);
+    employee1Cookie = emp1.cookie;
+    employee1UserId = emp1.user.userId;
 
     // 3. Authenticate Employee 2
-    const emp2Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee2', password: TEST_PASSWORD });
-    assert.equal(emp2Res.status, 200);
-    employee2Cookie = emp2Res.headers['set-cookie'];
-    employee2UserId = emp2Res.body.data.userId;
+    const emp2 = await loginAndGetUser(request, app, 'test.employee2', TEST_PASSWORD);
+    employee2Cookie = emp2.cookie;
+    employee2UserId = emp2.user.userId;
 
     // 4. Authenticate Customer 1
-    const custRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(custRes.status, 200);
-    customerCookie = custRes.headers['set-cookie'];
+    customerCookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
 
     // 5. Employee 1 creates an account for Customer 1
     const acc1Res = await request(app)
@@ -120,6 +107,12 @@ describe('Feature 4: Employee Personal Activity History Test Suite', () => {
       try {
         if (createdAccountIds.length > 0) {
           const ph = createdAccountIds.map(() => '?').join(',');
+          await query(
+            `DELETE foe FROM fraud_outbox_events foe
+             JOIN bank_transactions bt ON foe.transaction_id = bt.transaction_id
+             WHERE bt.source_account_id IN (${ph}) OR bt.destination_account_id IN (${ph})`,
+            [...createdAccountIds, ...createdAccountIds]
+          ).catch(() => {});
           await query(`DELETE FROM bank_transactions WHERE source_account_id IN (${ph}) OR destination_account_id IN (${ph})`, [...createdAccountIds, ...createdAccountIds]);
           await query(`DELETE FROM accounts WHERE account_id IN (${ph})`, createdAccountIds);
         }
@@ -346,11 +339,6 @@ describe('Feature 4: Employee Personal Activity History Test Suite', () => {
         'INSERT INTO employees (user_id, full_name, email, phone) VALUES (?, ?, ?, ?)',
         [newUserId, 'Fresh Employee', `fresh_${Date.now()}@bank.com`, '+1-555-019-9999']
       );
-
-      // Authenticate as fresh employee
-      const freshLoginRes = await request(app)
-        .post('/api/auth/login')
-        .send({ username: `fresh_emp_${Date.now()}`, password: TEST_PASSWORD });
 
       // Even if login was audited, query for non-matching category or date in distant future
       const emptyRes = await request(app)

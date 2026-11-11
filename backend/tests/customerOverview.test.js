@@ -29,6 +29,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const app = require('../src/app');
 const { pool, query, testConnection } = require('../src/config/db');
+const { loginAs } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -60,25 +61,13 @@ describe('Feature 1: Customer Account Overview Test Suite', () => {
     assert.ok(isDbLive, `MySQL Database must be connected for integration tests. Error: ${status.error}`);
 
     // 1. Authenticate Admin
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
 
     // 2. Authenticate Employee
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200);
-    employeeCookie = empRes.headers['set-cookie'];
+    employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
 
     // 3. Authenticate Customer 1
-    const cust1Res = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(cust1Res.status, 200);
-    customer1Cookie = cust1Res.headers['set-cookie'];
+    customer1Cookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
 
     const meRes = await request(app)
       .get('/api/auth/me')

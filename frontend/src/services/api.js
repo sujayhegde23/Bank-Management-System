@@ -42,6 +42,7 @@ export async function apiRequest(endpoint, options = {}) {
       err.status = response.status;
       err.code = data?.errorCode || data?.error?.code;
       err.details = data?.error?.details || data?.fields;
+      err.remainingAttempts = data?.remainingAttempts ?? data?.error?.remainingAttempts;
       throw err;
     }
 
@@ -66,13 +67,42 @@ export async function getSystemHealth() {
 
 /**
  * Authenticate user with username and password.
+ * Initiates the 2FA login challenge.
  * @param {{ username: string, password: string }} credentials
- * @returns {Promise<any>} Authenticated user safe profile
+ * @returns {Promise<any>} Pending challenge data
  */
 export async function login(credentials) {
   const response = await apiRequest('/auth/login', {
     method: 'POST',
     body: JSON.stringify(credentials)
+  });
+  return response?.data || response;
+}
+
+/**
+ * Submit 6-digit OTP verification code for a pending login challenge.
+ * Establishes the authenticated session upon success.
+ * @param {{ challengeId: string, otp: string }} params
+ * @returns {Promise<any>} Authenticated user profile
+ */
+export async function verifyOtp({ challengeId, otp }) {
+  const response = await apiRequest('/auth/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId, otp })
+  });
+  return response?.data || response;
+}
+
+/**
+ * Request a new OTP verification code for an active login challenge.
+ * Respects backend 60-second cooldown rate limit.
+ * @param {{ challengeId: string }} params
+ * @returns {Promise<any>} Updated challenge state
+ */
+export async function resendOtp({ challengeId }) {
+  const response = await apiRequest('/auth/resend-otp', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId })
   });
   return response?.data || response;
 }

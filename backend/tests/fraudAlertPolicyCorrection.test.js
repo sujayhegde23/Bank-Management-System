@@ -460,7 +460,7 @@ describe('Fraud Alert Policy Correction: Alert on Every Triggered Rule (13 Cases
     await query(
       `INSERT INTO bank_transactions
        (transaction_id, transaction_ref, type, amount, source_account_id, destination_account_id, performed_by_user_id, remarks, created_at)
-       VALUES (?, ?, 'TRANSFER', 60000.00, 1, 184, 4, 'Idempotent worker test', NOW())`,
+       VALUES (?, ?, 'TRANSFER', 60000.00, 1, 2, 4, 'Idempotent worker test', NOW())`,
       [workerTxId, `TXN-IDEM-${workerTxId}`]
     );
 

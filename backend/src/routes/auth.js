@@ -1,11 +1,13 @@
 /**
  * ==============================================================================
- * Authentication Routes
+ * Authentication Routes (Phase 2 - Email OTP Multi-Factor Authentication)
  * ==============================================================================
  * Endpoints:
- * - POST /api/auth/login   (Public: authenticates user, establishes session)
- * - POST /api/auth/logout  (Authenticated: destroys session, clears cookie)
- * - GET  /api/auth/me      (Authenticated: returns safe profile for active user)
+ * - POST /api/auth/login       (Public: verifies credentials, dispatches OTP challenge)
+ * - POST /api/auth/verify-otp  (Public / Pre-Auth: verifies 6-digit OTP, establishes session)
+ * - POST /api/auth/resend-otp  (Public / Pre-Auth: renews OTP challenge with 60s cooldown)
+ * - POST /api/auth/logout      (Authenticated: destroys session, clears cookie)
+ * - GET  /api/auth/me          (Authenticated: returns safe profile for active user)
  * ==============================================================================
  */
 
@@ -15,6 +17,11 @@ const bcrypt = require('bcryptjs');
 const { query } = require('../config/db');
 const { requireAuth } = require('../middleware/auth');
 const { recordAuditEvent } = require('../services/auditService');
+const {
+  createLoginChallenge,
+  verifyOtpChallenge,
+  resendOtpChallenge
+} = require('../services/otpService');
 
 // Precomputed static dummy hash used to equalize response timing when username does not exist
 // Precalculated for "dummy-password-timing-mitigation" with 10 salt rounds
@@ -22,7 +29,13 @@ const DUMMY_HASH = '$2b$10$wT8K8U1yH4CqN0Xq7Z3CWeG5yH0bN2zL4pQ8vR6tS2uW1xY9zA3B.
 
 /**
  * POST /api/auth/login
- * Public endpoint to authenticate a user and establish a secure session.
+ * Step 1 of Multi-Factor Authentication:
+ * Verifies username & password, resolves role-specific destination email,
+ * generates a 6-digit OTP challenge, and dispatches the code via email.
+ *
+ * PRE-AUTHENTICATION GUARANTEE:
+ * Does NOT create an authenticated session.
+ * Does NOT set req.session.user.
  */
 router.post('/login', async (req, res) => {
   const { username, password } = req.body || {};
@@ -107,7 +120,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // 4. Verify account status (inactive users return generic AUTH_001 per FR-24 & Architecture §10.2)
+    // 4. Verify account status (inactive users return generic AUTH_001)
     if (user.status !== 'ACTIVE') {
       await recordAuditEvent({
         actorUserId: user.user_id,
@@ -129,38 +142,138 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // 5. Resolve display name and domain identifier from linked profile tables
-    let displayName = user.username;
-    let customerId = null;
-    let employeeId = null;
+    // 5. Generate and deliver 2FA OTP challenge
+    try {
+      const challengeData = await createLoginChallenge({
+        user,
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent')
+      });
 
-    if (user.role === 'CUSTOMER') {
-      const custRows = await query(
-        'SELECT customer_id, full_name FROM customers WHERE user_id = ?',
-        [user.user_id]
-      );
-      if (custRows && custRows.length > 0) {
-        displayName = custRows[0].full_name;
-        customerId = custRows[0].customer_id;
+      // Bind the pending challenge to a short-lived pre-authentication session context
+      req.session.pendingChallenge = {
+        challengeId: challengeData.challengeId,
+        userId: user.user_id,
+        role: user.role,
+        username: user.username,
+        createdAt: Date.now()
+      };
+
+      const responsePayload = {
+        challengeId: challengeData.challengeId,
+        maskedEmail: challengeData.maskedEmail,
+        expiresInSeconds: challengeData.expiresInSeconds,
+        resendAvailableInSeconds: challengeData.resendAvailableInSeconds
+      };
+
+      return res.status(200).json({
+        success: true,
+        data: responsePayload
+      });
+    } catch (routingErr) {
+      console.error('OTP Challenge creation error:', routingErr.message);
+
+      await recordAuditEvent({
+        actorUserId: user.user_id,
+        actionType: 'LOGIN_FAILED',
+        targetEntityType: 'USER',
+        targetEntityId: user.user_id,
+        description: `Failed login attempt for user '${user.username}': ${routingErr.message}`,
+        result: 'FAILURE',
+        metadata: { reason: routingErr.message, role: user.role }
+      });
+
+      return res.status(400).json({
+        success: false,
+        errorCode: 'AUTH_007',
+        message: routingErr.message || 'Unable to route verification code to registered email address.',
+        error: {
+          code: 'AUTH_007',
+          message: routingErr.message || 'Unable to route verification code to registered email address.'
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Login process error:', error.message);
+    return res.status(500).json({
+      success: false,
+      errorCode: 'SYS_001',
+      message: 'Something went wrong. Please try again later.',
+      error: {
+        code: 'SYS_001',
+        message: 'Something went wrong. Please try again later.'
       }
-    } else if (user.role === 'EMPLOYEE') {
-      const empRows = await query(
-        'SELECT employee_id, full_name FROM employees WHERE user_id = ?',
-        [user.user_id]
-      );
-      if (empRows && empRows.length > 0) {
-        displayName = empRows[0].full_name;
-        employeeId = empRows[0].employee_id;
+    });
+  }
+});
+
+/**
+ * POST /api/auth/verify-otp
+ * Step 2 of Multi-Factor Authentication:
+ * Validates the 6-digit OTP code against the challenge.
+ * Checks expiry, attempt count, and single-use guarantee.
+ * Only upon successful verification, regenerates the session and establishes req.session.user.
+ */
+router.post('/verify-otp', async (req, res) => {
+  const { challengeId, otp } = req.body || {};
+
+  if (!challengeId || typeof challengeId !== 'string' || !challengeId.trim()) {
+    return res.status(400).json({
+      success: false,
+      errorCode: 'VAL_001',
+      message: 'Challenge ID is required.',
+      error: { code: 'VAL_001', message: 'Challenge ID is required.' }
+    });
+  }
+
+  if (!otp || typeof otp !== 'string' || !otp.trim()) {
+    return res.status(400).json({
+      success: false,
+      errorCode: 'VAL_001',
+      message: 'Verification code is required.',
+      error: { code: 'VAL_001', message: 'Verification code is required.' }
+    });
+  }
+
+  try {
+    const sessionChallenge = req.session?.pendingChallenge;
+    const verificationResult = await verifyOtpChallenge({
+      challengeId: challengeId.trim(),
+      otp: otp.trim(),
+      sessionChallengeId: sessionChallenge?.challengeId,
+      sessionUserId: sessionChallenge?.userId
+    });
+
+    if (!verificationResult.success) {
+      let statusCode = 400;
+      if (verificationResult.errorCode === 'AUTH_001') {
+        statusCode = 401;
+      } else if (verificationResult.errorCode === 'AUTH_005') {
+        statusCode = 403;
+      } else if (verificationResult.errorCode === 'AUTH_006') {
+        statusCode = 409;
       }
-    } else if (user.role === 'ADMIN') {
-      // SRS A-07: Administrators are USER rows with role ADMIN and no extra profile table
-      displayName = 'Administrator';
+
+      return res.status(statusCode).json({
+        success: false,
+        errorCode: verificationResult.errorCode,
+        message: verificationResult.message,
+        remainingAttempts: verificationResult.remainingAttempts,
+        error: {
+          code: verificationResult.errorCode,
+          message: verificationResult.message,
+          remainingAttempts: verificationResult.remainingAttempts
+        }
+      });
     }
 
-    // 6. Regenerate session to prevent session fixation and establish authenticated session
+    // OTP verification successful
+    const userProfile = verificationResult.user;
+
+    // Regenerate session to prevent session fixation attacks
     req.session.regenerate(async (err) => {
       if (err) {
-        console.error('Session regeneration error on login:', err.message);
+        console.error('Session regeneration error on OTP verification:', err.message);
         return res.status(500).json({
           success: false,
           errorCode: 'SYS_001',
@@ -172,39 +285,108 @@ router.post('/login', async (req, res) => {
         });
       }
 
+      // Establish authenticated session with verified user identity
       req.session.user = {
-        userId: user.user_id,
-        username: user.username,
-        role: user.role,
-        status: user.status,
-        createdAt: user.created_at,
-        displayName: displayName,
-        customerId: customerId,
-        employeeId: employeeId
+        userId: userProfile.userId,
+        username: userProfile.username,
+        role: userProfile.role,
+        status: userProfile.status,
+        createdAt: userProfile.createdAt,
+        displayName: userProfile.displayName,
+        customerId: userProfile.customerId,
+        employeeId: userProfile.employeeId
       };
 
+      // Clean up pre-authentication context
+      delete req.session.pendingChallenge;
+
       await recordAuditEvent({
-        actorUserId: user.user_id,
+        actorUserId: userProfile.userId,
         actionType: 'USER_LOGIN',
         targetEntityType: 'USER',
-        targetEntityId: user.user_id,
-        description: `User '${user.username}' logged in successfully as ${user.role}.`,
+        targetEntityId: userProfile.userId,
+        description: `User '${userProfile.username}' authenticated successfully via OTP as ${userProfile.role}.`,
         result: 'SUCCESS',
-        metadata: { role: user.role, username: user.username }
+        metadata: { role: userProfile.role, username: userProfile.username, challengeId }
       });
 
       return res.status(200).json({
         success: true,
         data: {
-          userId: user.user_id,
-          username: user.username,
-          role: user.role,
-          displayName: displayName
+          userId: userProfile.userId,
+          username: userProfile.username,
+          role: userProfile.role,
+          displayName: userProfile.displayName
         }
       });
     });
   } catch (error) {
-    console.error('Login process error:', error.message);
+    console.error('OTP verification error:', error.message);
+    return res.status(500).json({
+      success: false,
+      errorCode: 'SYS_001',
+      message: 'Something went wrong. Please try again later.',
+      error: {
+        code: 'SYS_001',
+        message: 'Something went wrong. Please try again later.'
+      }
+    });
+  }
+});
+
+/**
+ * POST /api/auth/resend-otp
+ * Renews an existing pending OTP challenge.
+ * Enforces a strict 60-second cooldown rate limit.
+ * Generates and delivers a fresh 6-digit code, invalidating the previous OTP.
+ */
+router.post('/resend-otp', async (req, res) => {
+  const { challengeId } = req.body || {};
+
+  if (!challengeId || typeof challengeId !== 'string' || !challengeId.trim()) {
+    return res.status(400).json({
+      success: false,
+      errorCode: 'VAL_001',
+      message: 'Challenge ID is required to resend verification code.',
+      error: { code: 'VAL_001', message: 'Challenge ID is required to resend verification code.' }
+    });
+  }
+
+  try {
+    const sessionChallenge = req.session?.pendingChallenge;
+    const resendResult = await resendOtpChallenge({
+      challengeId: challengeId.trim(),
+      sessionChallengeId: sessionChallenge?.challengeId
+    });
+
+    if (!resendResult.success) {
+      const statusCode = resendResult.errorCode === 'RATE_001' ? 429 : 400;
+      return res.status(statusCode).json({
+        success: false,
+        errorCode: resendResult.errorCode,
+        message: resendResult.message,
+        secondsRemaining: resendResult.secondsRemaining,
+        error: {
+          code: resendResult.errorCode,
+          message: resendResult.message,
+          secondsRemaining: resendResult.secondsRemaining
+        }
+      });
+    }
+
+    const responsePayload = {
+      challengeId: challengeId.trim(),
+      message: resendResult.message,
+      expiresInSeconds: resendResult.expiresInSeconds,
+      resendAvailableInSeconds: resendResult.resendAvailableInSeconds
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: responsePayload
+    });
+  } catch (error) {
+    console.error('OTP resend error:', error.message);
     return res.status(500).json({
       success: false,
       errorCode: 'SYS_001',

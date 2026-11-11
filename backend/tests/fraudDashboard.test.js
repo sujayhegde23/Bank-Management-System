@@ -43,6 +43,7 @@ const app = require('../src/app');
 const { pool, query } = require('../src/config/db');
 const { connectMongo, getDb, closeMongo, isMongoConnected } = require('../src/config/mongo');
 const { initializeMongoDatabase } = require('../src/config/initMongo');
+const { loginAs } = require('./helpers/authHelper');
 const {
   saveAssessment,
   saveAlert,
@@ -76,25 +77,13 @@ describe('Phase 4: Fraud Monitoring Dashboard Test Suite', () => {
     await initializeMongoDatabase();
 
     // 2. Authenticate Admin (test.admin1)
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
 
     // 3. Authenticate Employee (test.employee1)
-    const empRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
-    assert.equal(empRes.status, 200);
-    employeeCookie = empRes.headers['set-cookie'];
+    employeeCookie = await loginAs(request, app, 'test.employee1', TEST_PASSWORD);
 
     // 4. Authenticate Customer (test.customer1)
-    const custRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(custRes.status, 200);
-    customerCookie = custRes.headers['set-cookie'];
+    customerCookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
 
     // 5. Seed test transactions in MySQL
     const [accRows] = await pool.execute('SELECT balance FROM accounts WHERE account_id = 1');

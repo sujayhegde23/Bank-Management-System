@@ -32,6 +32,7 @@ const {
   DEFAULT_DB_NAME
 } = require('../src/config/mongo');
 const { initializeMongoDatabase, DEFAULT_FRAUD_RULES } = require('../src/config/initMongo');
+const { loginAs } = require('./helpers/authHelper');
 
 const TEST_PASSWORD = 'Password123!';
 
@@ -45,17 +46,8 @@ describe('Phase 1: MongoDB Foundation for Fraud Detection Test Suite', () => {
     assert.ok(mysqlStatus.connected, 'MySQL must be connected for integration tests');
 
     // 2. Obtain session cookies for API tests
-    const custRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
-    assert.equal(custRes.status, 200);
-    customerCookie = custRes.headers['set-cookie'];
-
-    const adminRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
-    assert.equal(adminRes.status, 200);
-    adminCookie = adminRes.headers['set-cookie'];
+    customerCookie = await loginAs(request, app, 'test.customer1', TEST_PASSWORD);
+    adminCookie = await loginAs(request, app, 'test.admin1', TEST_PASSWORD);
   });
 
   after(async () => {
