@@ -179,6 +179,7 @@ export default function CustomerStatements({
   // Pagination state (client-side table page)
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [sortOrder, setSortOrder] = useState('desc'); // 'desc' = Newest first (default), 'asc' = Chronological
 
   // Copy feedback
   const [copiedAccount, setCopiedAccount] = useState(false);
@@ -293,8 +294,14 @@ export default function CustomerStatements({
     document.body.removeChild(link);
   };
 
-  // Paginated transactions
-  const allTxns = useMemo(() => statement?.transactions || [], [statement?.transactions]);
+  // Paginated transactions (supports Newest First default or Chronological)
+  const allTxns = useMemo(() => {
+    const raw = statement?.transactions || [];
+    if (sortOrder === 'desc') {
+      return [...raw].reverse();
+    }
+    return raw;
+  }, [statement?.transactions, sortOrder]);
   const totalTxnCount = allTxns.length;
   const totalPages = Math.ceil(totalTxnCount / pageSize) || 1;
   const paginatedTxns = useMemo(() => {
@@ -625,11 +632,35 @@ export default function CustomerStatements({
             <section className="paper-ledger-section">
               <div className="ledger-title-bar">
                 <h3 className="ledger-heading">Transaction Ledger</h3>
-                <span className="ledger-count font-mono">
-                  {totalTxnCount === 0
-                    ? '0 transactions'
-                    : `Showing ${Math.min((page - 1) * pageSize + 1, totalTxnCount)}–${Math.min(page * pageSize, totalTxnCount)} of ${totalTxnCount} record${totalTxnCount === 1 ? '' : 's'}`}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  {totalTxnCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+                        setPage(1);
+                      }}
+                      className="no-print"
+                      style={{
+                        fontSize: '0.75rem',
+                        padding: '0.2rem 0.5rem',
+                        borderRadius: '4px',
+                        border: '1px solid #334155',
+                        background: '#1e293b',
+                        color: '#94a3b8',
+                        cursor: 'pointer'
+                      }}
+                      title="Toggle transaction sorting (Newest first / Chronological)"
+                    >
+                      {sortOrder === 'desc' ? '↓ Newest First' : '↑ Oldest First'}
+                    </button>
+                  )}
+                  <span className="ledger-count font-mono">
+                    {totalTxnCount === 0
+                      ? '0 transactions'
+                      : `Showing ${Math.min((page - 1) * pageSize + 1, totalTxnCount)}–${Math.min(page * pageSize, totalTxnCount)} of ${totalTxnCount} record${totalTxnCount === 1 ? '' : 's'}`}
+                  </span>
+                </div>
               </div>
 
               {totalTxnCount === 0 ? (

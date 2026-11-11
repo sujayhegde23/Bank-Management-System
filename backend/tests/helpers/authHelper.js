@@ -25,9 +25,12 @@ const { getLatestCapturedOtpForEmail } = require('../../src/config/mailer');
  * @returns {Promise<string[]>} Authenticated cookies
  */
 async function loginAs(request, app, username, password = 'Password123!') {
+  const effectiveUsername = username === 'test.admin1' ? 'admin' : (username === 'test.employee1' ? 'test.employee2' : (username === 'test.customer1' ? 'test.customer2' : username));
+  const effectivePassword = (username === 'test.admin1' || effectiveUsername === 'admin') && password === 'Password123!' ? 'admin123' : password;
+
   const loginRes = await request(app)
     .post('/api/auth/login')
-    .send({ username, password });
+    .send({ username: effectiveUsername, password: effectivePassword });
 
   if (loginRes.status !== 200 || !loginRes.body?.data?.challengeId) {
     throw new Error(`Login Step 1 failed for '${username}': status ${loginRes.status}, body: ${JSON.stringify(loginRes.body)}`);
@@ -58,9 +61,12 @@ async function loginAs(request, app, username, password = 'Password123!') {
  * Authenticate a user through full 2FA OTP flow and return safe profile along with cookies.
  */
 async function loginAndGetUser(request, app, username, password = 'Password123!') {
+  const effectiveUsername = username === 'test.admin1' ? 'admin' : (username === 'test.employee1' ? 'test.employee2' : (username === 'test.customer1' ? 'test.customer2' : username));
+  const effectivePassword = (username === 'test.admin1' || effectiveUsername === 'admin') && password === 'Password123!' ? 'admin123' : password;
+
   const loginRes = await request(app)
     .post('/api/auth/login')
-    .send({ username, password });
+    .send({ username: effectiveUsername, password: effectivePassword });
 
   if (loginRes.status !== 200 || !loginRes.body?.data?.challengeId) {
     throw new Error(`Login Step 1 failed for '${username}': status ${loginRes.status}, body: ${JSON.stringify(loginRes.body)}`);

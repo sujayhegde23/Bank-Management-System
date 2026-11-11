@@ -572,13 +572,6 @@ export default function App() {
     }
   };
 
-  // Quick fill testing helper
-  const handleQuickFill = (user, pass) => {
-    setUsername(user);
-    setPassword(pass);
-    setAuthError(null);
-  };
-
   // Diagnostic mapping
   const healthData = health?.data || health;
   const isDbConnected = Boolean(
@@ -631,7 +624,7 @@ export default function App() {
                 id="login-username"
                 className="login-input"
                 type="text"
-                placeholder="e.g. test.employee1 or test.admin1"
+                placeholder="Enter username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
@@ -666,49 +659,6 @@ export default function App() {
               {authLoading ? 'Verifying Credentials...' : 'Sign In to Portal'}
             </button>
           </form>
-
-          {/* Quick-fill testing helpers */}
-          <div className="login-quickfill-box">
-            <div className="quickfill-header">
-              <span className="quickfill-title">Quick Demo Login</span>
-              <span className="quickfill-pass-pill">Password: <code>Password123!</code></span>
-            </div>
-            <div className="quickfill-buttons-grid">
-              <button
-                type="button"
-                className="quickfill-btn employee-quickfill"
-                onClick={() => handleQuickFill('test.employee1', 'Password123!')}
-              >
-                <div className="quickfill-btn-left">
-                  <IconUserCheck size={14} />
-                  <span className="quickfill-role">Bank Employee</span>
-                </div>
-                <code className="quickfill-user">test.employee1</code>
-              </button>
-              <button
-                type="button"
-                className="quickfill-btn admin-quickfill"
-                onClick={() => handleQuickFill('test.admin1', 'Password123!')}
-              >
-                <div className="quickfill-btn-left">
-                  <IconShield size={14} />
-                  <span className="quickfill-role">Administrator</span>
-                </div>
-                <code className="quickfill-user">test.admin1</code>
-              </button>
-              <button
-                type="button"
-                className="quickfill-btn customer-quickfill"
-                onClick={() => handleQuickFill('test.customer1', 'Password123!')}
-              >
-                <div className="quickfill-btn-left">
-                  <IconUsers size={14} />
-                  <span className="quickfill-role">Retail Customer</span>
-                </div>
-                <code className="quickfill-user">test.customer1</code>
-              </button>
-            </div>
-          </div>
 
           <div className="login-security-notice">
             <IconLock size={13} />

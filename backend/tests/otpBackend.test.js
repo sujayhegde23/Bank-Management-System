@@ -87,7 +87,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('1. Correct password generates and sends an OTP without establishing an authenticated session', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
@@ -105,7 +105,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('2. Incorrect password does not generate a valid challenge', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: 'IncorrectPassword999!' });
+      .send({ username: 'test.customer2', password: 'IncorrectPassword999!' });
 
     assert.equal(res.status, 401);
     assert.equal(res.body.success, false);
@@ -117,10 +117,10 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('3. Customer OTP routes strictly to customers.email and masks appropriately', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     assert.equal(res.status, 200);
-    assert.equal(res.body.data.maskedEmail, 't***1@example.com');
+    assert.equal(res.body.data.maskedEmail, 't***2@example.com');
     assert.notEqual(res.body.data.maskedEmail, process.env.ADMIN_OTP_EMAIL);
   });
 
@@ -128,10 +128,10 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('4. Employee OTP routes strictly to employees.email and masks appropriately', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.employee1', password: TEST_PASSWORD });
+      .send({ username: 'test.employee2', password: TEST_PASSWORD });
 
     assert.equal(res.status, 200);
-    assert.equal(res.body.data.maskedEmail, 't***1@example.com');
+    assert.equal(res.body.data.maskedEmail, 't***2@example.com');
     assert.notEqual(res.body.data.maskedEmail, process.env.ADMIN_OTP_EMAIL);
   });
 
@@ -139,7 +139,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('5. Admin OTP routes strictly to ADMIN_OTP_EMAIL environment variable', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.admin1', password: TEST_PASSWORD });
+      .send({ username: 'admin', password: 'admin123' });
 
     assert.equal(res.status, 200);
     const adminEmail = process.env.ADMIN_OTP_EMAIL;
@@ -164,7 +164,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('7. Correct OTP authenticates the user, regenerates session, and grants access to /me', async () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     assert.equal(loginRes.status, 200);
     const { challengeId } = loginRes.body.data;
@@ -180,9 +180,9 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
 
     assert.equal(verifyRes.status, 200);
     assert.equal(verifyRes.body.success, true);
-    assert.equal(verifyRes.body.data.username, 'test.customer1');
+    assert.equal(verifyRes.body.data.username, 'test.customer2');
     assert.equal(verifyRes.body.data.role, 'CUSTOMER');
-    assert.equal(verifyRes.body.data.displayName, 'Test Customer One');
+    assert.equal(verifyRes.body.data.displayName, 'Test Customer Two');
 
     const authCookie = verifyRes.headers['set-cookie'];
 
@@ -192,7 +192,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
       .set('Cookie', authCookie);
 
     assert.equal(meRes.status, 200);
-    assert.equal(meRes.body.data.username, 'test.customer1');
+    assert.equal(meRes.body.data.username, 'test.customer2');
     assert.equal(meRes.body.data.role, 'CUSTOMER');
   });
 
@@ -200,7 +200,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('8. Incorrect OTP is rejected with remaining attempts counter', async () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     const { challengeId } = loginRes.body.data;
     const cookie = loginRes.headers['set-cookie'];
@@ -220,7 +220,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('9. Expired OTP is rejected with AUTH_004', async () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     const { challengeId } = loginRes.body.data;
     const otp = getLatestOtpForChallenge(challengeId);
@@ -246,7 +246,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('10. OTP is permanently locked after three failed attempts (AUTH_005)', async () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     const { challengeId } = loginRes.body.data;
     const otp = getLatestOtpForChallenge(challengeId);
@@ -278,7 +278,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('11. Single-use guarantee: verified OTP cannot be reused (AUTH_006)', async () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     const { challengeId } = loginRes.body.data;
     const otp = getLatestOtpForChallenge(challengeId);
@@ -304,7 +304,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('12. Resend cooldown enforces 60-second rate limit (RATE_001 / 429)', async () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     const { challengeId } = loginRes.body.data;
     const cookie = loginRes.headers['set-cookie'];
@@ -324,7 +324,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('13. Old OTP becomes invalid after resend and new OTP is accepted', async () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     const { challengeId } = loginRes.body.data;
     const originalOtp = getLatestOtpForChallenge(challengeId);
@@ -360,7 +360,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
       .set('Cookie', cookie)
       .send({ challengeId, otp: newOtp });
     assert.equal(newVerifyRes.status, 200);
-    assert.equal(newVerifyRes.body.data.username, 'test.customer1');
+    assert.equal(newVerifyRes.body.data.username, 'test.customer2');
   });
 
   // 14. Previous pending challenges are invalidated
@@ -368,7 +368,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
     // Challenge A
     const loginA = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
     const { challengeId: challengeA } = loginA.body.data;
     const otpA = getLatestOtpForChallenge(challengeA);
     const cookieA = loginA.headers['set-cookie'];
@@ -376,7 +376,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
     // Challenge B for same user
     const loginB = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
     const { challengeId: challengeB } = loginB.body.data;
     const otpB = getLatestOtpForChallenge(challengeB);
     const cookieB = loginB.headers['set-cookie'];
@@ -404,7 +404,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('15. Pre-auth session cannot access protected banking endpoints (AUTH_003)', async () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     const preAuthCookie = loginRes.headers['set-cookie'];
 
@@ -449,7 +449,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   it('17. Session regeneration replaces session ID upon OTP verification', async () => {
     const loginRes = await request(app)
       .post('/api/auth/login')
-      .send({ username: 'test.customer1', password: TEST_PASSWORD });
+      .send({ username: 'test.customer2', password: TEST_PASSWORD });
 
     const { challengeId } = loginRes.body.data;
     const otp = getLatestOtpForChallenge(challengeId);
@@ -471,7 +471,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
   // 18. CUSTOMER, EMPLOYEE, and ADMIN roles continue to work
   it('18. Full login & authorization works across CUSTOMER, EMPLOYEE, and ADMIN roles', async () => {
     // CUSTOMER
-    const cLogin = await request(app).post('/api/auth/login').send({ username: 'test.customer1', password: TEST_PASSWORD });
+    const cLogin = await request(app).post('/api/auth/login').send({ username: 'test.customer2', password: TEST_PASSWORD });
     const cOtp = getLatestOtpForChallenge(cLogin.body.data.challengeId);
     const cVerify = await request(app)
       .post('/api/auth/verify-otp')
@@ -483,7 +483,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
     assert.equal(cRouteRes.status, 200);
 
     // EMPLOYEE
-    const eLogin = await request(app).post('/api/auth/login').send({ username: 'test.employee1', password: TEST_PASSWORD });
+    const eLogin = await request(app).post('/api/auth/login').send({ username: 'test.employee2', password: TEST_PASSWORD });
     const eOtp = getLatestOtpForChallenge(eLogin.body.data.challengeId);
     const eVerify = await request(app)
       .post('/api/auth/verify-otp')
@@ -495,7 +495,7 @@ describe('Phase 2: Backend Email OTP Authentication Suite', () => {
     assert.equal(eRouteRes.status, 200);
 
     // ADMIN
-    const aLogin = await request(app).post('/api/auth/login').send({ username: 'test.admin1', password: TEST_PASSWORD });
+    const aLogin = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'admin123' });
     const aOtp = getLatestOtpForChallenge(aLogin.body.data.challengeId);
     const aVerify = await request(app)
       .post('/api/auth/verify-otp')

@@ -243,14 +243,14 @@ describe('OTP Database Schema & Email Routing Suite (Phase 1)', () => {
   });
 
   describe('3. Authoritative Role-Based Email Routing Verification', () => {
-    it('should verify test.admin1 routing to ADMIN_OTP_EMAIL environment variable', async () => {
+    it('should verify admin routing to ADMIN_OTP_EMAIL environment variable', async () => {
       const adminEmail = process.env.ADMIN_OTP_EMAIL;
       assert.ok(adminEmail, 'ADMIN_OTP_EMAIL must be configured in environment');
       assert.ok(adminEmail.includes('@'), 'ADMIN_OTP_EMAIL must be a valid email format');
 
       // Verify admin user has role ADMIN in users table
       const [adminRows] = await pool.execute(
-        "SELECT user_id, username, role FROM users WHERE username = 'test.admin1'"
+        "SELECT user_id, username, role FROM users WHERE username = 'admin'"
       );
       assert.equal(adminRows.length, 1);
       assert.equal(adminRows[0].role, 'ADMIN');
@@ -263,31 +263,31 @@ describe('OTP Database Schema & Email Routing Suite (Phase 1)', () => {
       assert.equal(resolvedEmail, adminEmail);
     });
 
-    it('should verify test.employee1 routing to employees.email and NEVER to admin email', async () => {
+    it('should verify test.employee2 routing to employees.email and NEVER to admin email', async () => {
       const [empRows] = await pool.execute(`
         SELECT u.user_id, u.username, u.role, e.email
         FROM users u
         JOIN employees e ON u.user_id = e.user_id
-        WHERE u.username = 'test.employee1'
+        WHERE u.username = 'test.employee2'
       `);
 
       assert.equal(empRows.length, 1);
       assert.equal(empRows[0].role, 'EMPLOYEE');
-      assert.equal(empRows[0].email, 'test.employee1@example.com');
+      assert.equal(empRows[0].email, 'test.employee2@example.com');
       assert.notEqual(empRows[0].email, process.env.ADMIN_OTP_EMAIL);
     });
 
-    it('should verify test.customer1 routing to customers.email and NEVER to admin email', async () => {
+    it('should verify test.customer2 routing to customers.email and NEVER to admin email', async () => {
       const [custRows] = await pool.execute(`
         SELECT u.user_id, u.username, u.role, c.email
         FROM users u
         JOIN customers c ON u.user_id = c.user_id
-        WHERE u.username = 'test.customer1'
+        WHERE u.username = 'test.customer2'
       `);
 
       assert.equal(custRows.length, 1);
       assert.equal(custRows[0].role, 'CUSTOMER');
-      assert.equal(custRows[0].email, 'test.customer1@example.com');
+      assert.equal(custRows[0].email, 'test.customer2@example.com');
       assert.notEqual(custRows[0].email, process.env.ADMIN_OTP_EMAIL);
     });
   });

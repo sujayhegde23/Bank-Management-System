@@ -123,6 +123,7 @@ export default function AccountStatementModal({ accountId, accountData, onClose 
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [showCustomRange, setShowCustomRange] = useState(false);
+  const [sortOrder, setSortOrder] = useState('desc'); // 'desc' = Newest first (default), 'asc' = Chronological
 
   const isMountedRef = useRef(true);
 
@@ -448,9 +449,30 @@ export default function AccountStatementModal({ accountId, accountData, onClose 
               <section className="sheet-table-section">
                 <div className="table-heading-row">
                   <h3 className="section-title">Transaction Ledger</h3>
-                  <span className="tx-count-text">
-                    Showing {statement.transactions.length} record{statement.transactions.length === 1 ? '' : 's'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    {statement.transactions.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                        className="no-print"
+                        style={{
+                          fontSize: '0.72rem',
+                          padding: '0.2rem 0.45rem',
+                          borderRadius: '4px',
+                          border: '1px solid #cbd5e1',
+                          background: '#f8fafc',
+                          color: '#475569',
+                          cursor: 'pointer'
+                        }}
+                        title="Toggle sort order (Newest first / Chronological)"
+                      >
+                        {sortOrder === 'desc' ? '↓ Newest First' : '↑ Oldest First'}
+                      </button>
+                    )}
+                    <span className="tx-count-text">
+                      Showing {statement.transactions.length} record{statement.transactions.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
                 </div>
 
                 {statement.transactions.length === 0 ? (
@@ -474,7 +496,7 @@ export default function AccountStatementModal({ accountId, accountData, onClose 
                       </tr>
                     </thead>
                     <tbody>
-                      {statement.transactions.map((tx) => {
+                      {(sortOrder === 'desc' ? [...statement.transactions].reverse() : statement.transactions).map((tx) => {
                         const isDebit = tx.direction === 'DEBIT';
                         const isCredit = tx.direction === 'CREDIT';
                         return (

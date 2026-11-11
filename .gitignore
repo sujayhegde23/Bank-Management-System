@@ -39,3 +39,9 @@ Thumbs.db
 # Testing coverage
 coverage/
 .nyc_output/
+
+# Database dumps & local backups
+database/backups/
+*.sql.gz
+*.dump
+
