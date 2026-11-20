@@ -257,6 +257,8 @@ npm run lint:frontend
 
 ## Documentation Index
 
+- [Download the complete project documentation (PDF)](docs/Bank_Management_System_Project_Documentation.pdf): one compiled PDF containing all 26 documents in `docs/`, including diagrams
+
 ### Phase 1 Deliverables
 - [Software Requirements Specification (SRS)](docs/phase1/SRS.md): complete IEEE-style SRS with functional and non-functional requirements, security objectives and requirements, and the use case model
 - [Software Test Plan](docs/phase1/test_plan.md): IEEE-style test plan, security validation (Section 5.1), 21 test cases and a test traceability matrix
